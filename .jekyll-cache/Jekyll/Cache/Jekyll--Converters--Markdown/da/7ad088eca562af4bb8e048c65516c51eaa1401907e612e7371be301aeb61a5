@@ -1,0 +1,5 @@
+I"
+<blockquote>
+  <p>Doctor starts off with attacking a health service message board website where we discover two vulnerabilities, Server-side Template injection and Command injection both of which leads to initial foothold on the box. Next we discover the user has privileges to read logs, where we find a password sent over password reset url, resulting in gaining access to next user. For elevating privileges to root we exploit the Splunk Atom feed service using SplunkWhisperer2 to obtain root shell.</p>
+</blockquote>
+:ET

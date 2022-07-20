@@ -1,0 +1,4 @@
+I"W<blockquote>
+  <p>Cache was a fun box, Initial web enumeration leads us to hardcoded credentials stored inside simple login page which uses client side validation, then discover a new VHost running a vulnerable instance of OpenEMR application. Exploitation chain of this application involves bypassing authentication allowing us to access a page vulnerable to SQL injection, We’ll perform SQL injection attack manually to dump hashes from the database. Next, We’ll use an OpenEMR Authenticated Remote Code Execution exploit to drop us a shell on the box, then pivot to another user using the credentials obtained from hardcoded website. Later we’ll access a Memcached service holding credentials of another user, dump them and escalate to next user. Leveraging the docker membership of the user we’ll elevate privileges to root.</p>
+</blockquote>
+:ET

@@ -1,0 +1,4 @@
+I"z<blockquote>
+  <p>Tabby was a user friendly easy level box put together with interesting attack vectors. We start off with discovering Local File Inclusion (LFI) in a website and leverage it to expose credentials for the tomcat server hosted on a different port. Then we exploit tomcat in a rather peculiar way using command line to upload malicious WAR file and execute it drop us a reverse shell. Next we crack password of a zip archive and re-use this password to gain access to next user, this user happens to be a member of LXD group, abusing this group permission we start a privileged container to gain root.</p>
+</blockquote>
+:ET

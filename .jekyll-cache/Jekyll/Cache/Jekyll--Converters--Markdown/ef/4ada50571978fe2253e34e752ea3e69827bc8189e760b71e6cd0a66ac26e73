@@ -1,0 +1,4 @@
+I"ä<blockquote>
+  <p>ret2basic was a basic ret2win based binary exploitation challenge where we Locate a method within the binary that we want to call and do so by overwriting a saved return address on the stack.</p>
+</blockquote>
+:ET

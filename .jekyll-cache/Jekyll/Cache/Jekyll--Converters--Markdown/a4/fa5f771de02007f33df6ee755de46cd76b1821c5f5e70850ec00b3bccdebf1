@@ -1,0 +1,4 @@
+I"å<blockquote>
+  <p>SneakyMailer starts off with Web enumeration where we discover a list of email addresses and send them phishing mails. One of the user triggers the link and drops his creds via POST request, Using those creds we get access to his mailbox where we find creds for accessing FTP. Inside FTP we find a subdomain web directory to which we can upload our php reverse shell and acquire shell on the machine. Further enumerating we find another subdomain which is a PyPi server, for elevating privileges to next user we leverage this service to upload a malicious python package which drops a SSH public key allowing us to SSH as that user. For root we abuse pip3 sudo privileges permitting us to get root shell.</p>
+</blockquote>
+:ET

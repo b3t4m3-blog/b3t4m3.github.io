@@ -1,0 +1,4 @@
+I"<blockquote>
+  <p>Buff is a quite easy box highlighting basics of enumeration, where we discover a website running a vulnerable software and exploit it using a publicly available exploit to a get remote code execution on the box. For elevating privileges to root, we’ll find another service listening on localhost, then port forward to establish a connection with the service and exploit it using a public exploit by updating the shell code of Buffer Overflow exploit to spawn a reverse shell as Administrator.</p>
+</blockquote>
+:ET

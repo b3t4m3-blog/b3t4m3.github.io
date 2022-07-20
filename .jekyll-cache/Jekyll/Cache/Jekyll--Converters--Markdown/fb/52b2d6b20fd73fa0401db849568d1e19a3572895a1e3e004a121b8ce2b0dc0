@@ -1,0 +1,5 @@
+I"Ò<blockquote>
+  <p>Lame is the first machine published on HackTheBox which is vulnerable to SAMBA 3.0.20 (CVE-2007-2447) and Distcc(CVE-2004-2687) exploits. First we will own root using SAMBA exploit manually and later with Metasploit.
+Weâ€™ll also use Distcc exploit which unlike samba exploit gives us user shell and thus further we will use various privilege escalation methods like nmap SUID binary, Weak SSH Key, UnrealIRCd to gain root shell.</p>
+</blockquote>
+:ET

@@ -8,36 +8,36 @@
 # jekyll-seo-tag settings › https://github.com/jekyll/jekyll-seo-tag/blob/master/docs/usage.md
 #--------------------------
 
-title: ColdFusionX                          # the main title
+title: b3t4m3                          # the main title
 
-tagline: CTF Player | Pentester | InfoSec Enthusiast # it will display as the sub-title
-          
+tagline: Ethical Hacker | CTF Player | Cybersecurity Specialist # it will display as the sub-title
+
 description: >-                        # used by seo meta and the atom feed
-  Realm of Knowledge
+  Risk Taker
 
 # Replace with the website url, e.g. 'https://username.github.io'
-url: 'https://ColdFusionX.github.io'
+url: 'https://bet4m3.github.io'
 
-author: Mayank Deshmukh               # change to your full name
+author: Carlos Sequeira              # change to your full name
 
 avatar: /assets/img/sample/profile.jpg   # support internet resources
 
 github:
-  username: ColdFusionX             # change to your github username
+  username: bet4m3             # change to your github username
 
 twitter:
-  username: ColdFusionX_            # change to your twitter username
+  username: bet4m3            # change to your twitter username
 
 social:
-  name: Mayank Deshmukh                  # it will shows as the copyright owner in Footer
-  email: coldfusionx@outlook.com             # change to your email address
+  name: Carlos Sequeira                  # it will shows as the copyright owner in Footer
+  email: b3t4m3@protonmail.com            # change to your email address
   links:
     # The first element serves as the copyright owner's link
-    - https://twitter.com/ColdFusionX_      # change to your twitter homepage
-    - https://github.com/ColdFusionX       # change to your github homepage
+    - #https://twitter.com/ColdFusionX_      # change to your twitter homepage
+    - https://github.com/bet4m3       # change to your github homepage
     # Uncomment below to add more social links
     # - https://www.facebook.com/username
-    # - https://www.linkedin.com/in/username
+     - https://https://www.linkedin.com/in/b3t4m3/
 
 google_site_verification: CtBtIysuQ8b6k36FI7jqU-o34DRoA_sye50a-RNtPPY # change to your verification string
 

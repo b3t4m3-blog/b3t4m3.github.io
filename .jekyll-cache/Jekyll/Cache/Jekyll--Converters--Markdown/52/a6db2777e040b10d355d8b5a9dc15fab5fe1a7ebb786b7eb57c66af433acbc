@@ -1,0 +1,4 @@
+I"î<blockquote>
+  <p>Academy is a vulnerable replica of a recently released Cyber Security training product by HackTheBox. Initial foothold requires us to exploit a vulnerable registration page through which we can register an admin account where we get access to Task dashboard. There we discover a new virtual host, which discloses a Laravel crash report with configuration details dump including APP_KEY. Leveraging this APP_KEY we create a serialized payload to be submitted in an HTTP header leading to code execution. Later we discover creds for the next user inside another Laravel configuration file, then analyse some audit logs where we find creds for another user, and lastly elevate privileges to root using sudo composer.</p>
+</blockquote>
+:ET

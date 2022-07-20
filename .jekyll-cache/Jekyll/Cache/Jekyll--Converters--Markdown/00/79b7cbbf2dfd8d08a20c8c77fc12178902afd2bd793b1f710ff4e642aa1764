@@ -1,0 +1,4 @@
+I"�<blockquote>
+  <p>Blunder was an cool box with two interdependent web application vulnerabilities, Starting off with Web Enumeration we discover a blog hosted on Bludit CMS, going through Github releases indicates the version is vulnerable to bypass a anti brute force mechanism, along with it a authenticated user can also achieve Remote Code execution via bypassing Image Upload functionality. To commence brute force attack I’ll write my own exploit code and get the credentials. However, Rather than using Metasploit to obtain remote code execution, I’ll do it manually to bypass Image upload filter and get a shell on the box. Furthermore, inside a database config file we creds for another user and pivot to it. For elevating privileges to root, we’ll exploit CVE-2019-14287 aka sudo vulnerability which allows a user to evade security policy and execute command as root even though the user is restricted to do so.</p>
+</blockquote>
+:ET

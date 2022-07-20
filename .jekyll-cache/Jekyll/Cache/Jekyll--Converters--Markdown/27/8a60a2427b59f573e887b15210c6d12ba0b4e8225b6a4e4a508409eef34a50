@@ -1,0 +1,4 @@
+I"R<blockquote>
+  <p>Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service <code class="language-plaintext highlighter-rouge">UsoSvc</code> to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit.</p>
+</blockquote>
+:ET

@@ -1,0 +1,4 @@
+I"�<blockquote>
+  <p>Admirer is an easy box with bunch of rabbit holes where usual enumeration workflow doesn’t work forcing us think out of the box and gather initial data. We’ll start with web-recon where will find FTP credentials, inside FTP share we’ll discover an outdated source code of the website leading us enumerate further and discover an vulnerable version of Adminer Web Interface running on Box allowing us to read local files on the server, where we’ll read current source of the page, get credentials which works for SSH access. For elevating privilege to root we’ll abuse sudo privilege allowing us to set up an environment variable and execute a script, leading to Python Library hijack and get RCE as root.</p>
+</blockquote>
+:ET
