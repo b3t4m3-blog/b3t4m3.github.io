@@ -12,7 +12,7 @@ title: b3t4m3
 
 baseurl: "blog"                          # the main title
 
-tagline: Ethical Hacker | CTF Player | Cybersecurity Specialist # it will display as the sub-title
+tagline: Cybersecurity Specialist & CTF Player # it will display as the sub-title
 
 description: >-                        # used by seo meta and the atom feed
   Risk Taker
