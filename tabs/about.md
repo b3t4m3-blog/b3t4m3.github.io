@@ -13,5 +13,4 @@ I am trying to document things as I learn and share it with community, Here you 
 
 If you're interested in contacting me, LinkedIn and Twitter are good avenues or shoot me an email.
 
-
-<script src="https://www.hackthebox.eu/badge/163155"></script>
+<img src="http://www.hackthebox.eu/badge/image/163155" alt="Hack The Box">
