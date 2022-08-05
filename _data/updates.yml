@@ -8,9 +8,6 @@
   filename: 'OpenKeys-HTB'
   lastmod: '2020-12-16 11:38:50 +0530'
 -
-  filename: 'Groovy_RCE'
-  lastmod: '2020-08-27 15:54:53 +0530'
--
   filename: 'Blackfield-HTB'
   lastmod: '2020-10-08 12:55:09 +0530'
 -
@@ -25,9 +22,6 @@
 -
   filename: 'LegacyHTB'
   lastmod: '2020-09-02 13:26:19 +0530'
--
-  filename: 'SneakyMailer-HTB'
-  lastmod: '2020-12-03 11:40:23 +0530'
 -
   filename: 'Doctor-HTB'
   lastmod: '2021-02-15 13:19:17 +0530'
