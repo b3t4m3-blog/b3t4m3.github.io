@@ -42,7 +42,7 @@ Host script results:
 |   Workgroup: HTB\x00
 |_  System time: 2022-07-18T05:38:03+03:00
 
-Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Servic1e detection performed. Please report any incorrect results at https://nmap.org/submit/ .
 Nmap done: 1 IP address (1 host up) scanned in 17.56 seconds
 ```
 
