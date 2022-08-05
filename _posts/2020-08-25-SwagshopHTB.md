@@ -51,7 +51,7 @@ http://swagshop.htb/ [200 OK] Apache[2.4.18], Cookies[frontend], Country[RESERVE
 
 ## looking at the website
 
-![test](:/assets/img/Posts/836564d99f855c02698794b613401c04.png)
+![test](/assets/img/Posts/836564d99f855c02698794b613401c04.png)
 
 ## lets fuzz using wfuzz to see what other directories we can find
 
@@ -113,11 +113,11 @@ Requests/sec.: 0
 
 ## admin panel
 
-![af66c860668fc11c486e0596c6e7d05e.png](:/798cb36d407d44518abc59a5efdde20a)
+![test2](/assets/img/Posts/af66c860668fc11c486e0596c6e7d05e.png)
 
 # Searchsploit
 
-![207e1b6bf4c013d3abe76f90d470472f.png](:/efd58c9d394541fdb6527be1ccb83135)
+![test3](/assets/img/Posts/207e1b6bf4c013d3abe76f90d470472f.png)
 ## Exploit used
 ```
 xml/webapps/37977.py
@@ -153,7 +153,7 @@ b"popularity[from]=0&popularity[to]=3&popularity[field_expr]=0);SET @SALT = 'rp'
 
 ## Exploit
 
-![4f01a1d5c0c842f66145232cf8a43418.png](:/024145ce5c8e4039947ca188ac4f7b7c)
+![test4](/assets/img/Posts/4f01a1d5c0c842f66145232cf8a43418.png)
 
 ### python3 Script, needed to add .encode() at pfilter
 
@@ -200,17 +200,17 @@ else:
 
 # Owning admin panel
 
-![2e6f1656aef3b557b993684ca3d4c7ee.png](:/ce2124c7e95f4859bb2b93c6a02272bd)
+![test4](/assets/img/Posts/2e6f1656aef3b557b993684ca3d4c7ee.png)
 
 # change template settings
 
-![ceab10cc8de7c71538770ff584862da9.png](:/d48e8019fc38479cb9b957820b287104)
+![test5](/assets/img/Posts/ceab10cc8de7c71538770ff584862da9.png)
 
 # Uploading a malicious php file
 
 ## evil idiot.php.png file
 
-![9e3d6481bf930bbae6394cac6c899af1.png](:/3cb0a361308844bc8ef9fa0961e2320f)
+![test6](/assets/img/Posts/9e3d6481bf930bbae6394cac6c899af1.png)
 
 ### payload:
 ```
@@ -218,18 +218,18 @@ else:
 ```
 
 
-![bdddbdd3c3342df993643f2182e377fb.png](:/fb5117f4ad8045ac8c6f00a3cfcaa64d)
+![test7](/assets/img/Posts/bdddbdd3c3342df993643f2182e377fb.png)
 ## Then just preview the template
 
 ## rev shell
 
 
-![973e0297d921f4387bec5688ffa1e320.png](:/d14ba71327df4c569c440efa091d1e88)
+![test8](/assets/img/Posts/973e0297d921f4387bec5688ffa1e320.png)
 
 
 ### user.txt
 
-![b13d7fcc52883ff6ac4b9afaa4ef8247.png](:/ffae549ac5f54898baae357c44f140de)
+![b13d7fcc52883ff6ac4b9afaa4ef8247.png](/assets/img/Posts/b13d7fcc52883ff6ac4b9afaa4ef8247.png)
 
 
 # Priv escalation
@@ -237,16 +237,16 @@ else:
 
 ## sudo -l
 
-![dfeb34cc7dd82f2cc694556f993140fc.png](:/82effecb6d8446059c196ce2100ce270)
+![dfeb34cc7dd82f2cc694556f993140fc.png](/assets/img/Posts/dfeb34cc7dd82f2cc694556f993140fc.png)
 
 
-![860ccf76f09880d7c712c27a74220bc2.png](:/34ba9a7fc1024cef883ad25ca045dd2b)
+![860ccf76f09880d7c712c27a74220bc2.png](/assets/img/Posts/860ccf76f09880d7c712c27a74220bc2.png)
 
 ## root shell
 
 
-![0e40fd904030a0c8eb664dd82d4d8ab2.png](:/03b9b29bd4884ee8ab8de6164daa0f5e)
+![0e40fd904030a0c8eb664dd82d4d8ab2.png](/assets/img/Posts/0e40fd904030a0c8eb664dd82d4d8ab2.png)
 
 ### root.txt
 
-![8b85a3b6158b588d9e2f110c30240b84.png](:/817ac1f957fd4cdb874b60f5c0e303ed)
+![8b85a3b6158b588d9e2f110c30240b84.png](/assets/img/Posts/8b85a3b6158b588d9e2f110c30240b84.png)
