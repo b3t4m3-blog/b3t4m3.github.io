@@ -9,7 +9,7 @@ image: /assets/img/Posts/SwagShop.png
 > SwagShop from HackTheBox is an retired machine which had a web service running with an outdated vulnerable Magento CMS that allows us to perform an RCE using Froghopper Attack and get a reverse shell. Later we can exploit sudo privileges to run vi as root through sudo command and exploit it to get root shell.
 
 # Recon
-
+lol
 ## nmap
 
 ```
