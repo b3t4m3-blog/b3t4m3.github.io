@@ -1,4 +1,0 @@
-I"v<blockquote>
-  <p>OpenKeyS gives us good insight and exposure on OpenBSD vulnerabilities, initial web enumeration leads us to a directory where we find a vim swap file, restoring the file contents we understand certain aspects on how authentication works for the login form. Next we use it with CVE-2019-19521 to reform and execute authentication bypass attack to retrieve a valid user’s SSH key. For elevating privileges to root we exploit vulnerabilities out of CVE-2019-19520 and CVE-2019-19522, first by exploiting xlock we gain access to auth group and then abuse S/Key authentication to gain root shell.</p>
-</blockquote>
-:ET

